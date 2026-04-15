@@ -7,7 +7,6 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// CORS - Test için genişlettik
 app.use(cors({
   origin: '*',
   credentials: true,
@@ -17,20 +16,16 @@ app.use(cors({
 
 app.use(express.json());
 
-// Ana sayfalar
 app.get('/', (req, res) => {
-  res.json({ message: "FinScope Backend Çalışıyor", status: "OK" });
+  res.json({ message: "FinScope Backend Working", status: "OK" });
 });
 
 app.get('/health', (req, res) => {
   res.json({ status: "healthy" });
 });
 
-// Chart Endpoint
 app.get('/chart/candles', (req, res) => {
   const { symbol = 'BTCUSDT', timeframe = '1D' } = req.query;
-
-  console.log(`[CHART] ${symbol} - ${timeframe}`);
 
   const count = timeframe === '1D' ? 150 : timeframe === '1W' ? 70 : 30;
 
@@ -61,5 +56,5 @@ app.get('/chart/candles', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server http://localhost:${PORT} portunda çalışıyor`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });
