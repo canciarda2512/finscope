@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import APIClient from '../services/APIClient';
+import TokenManager from '../services/TokenManager';
 
 const AuthContext = createContext();
 
@@ -8,30 +10,48 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // Sayfa yenilendiğinde kullanıcıyı hatırla
+  // Sayfa yüklendiğinde token varsa kullanıcıyı getir
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    const accessToken = TokenManager.getAccessToken();
+    
+    if (accessToken) {
+      APIClient.get('/auth/me')
+        .then(res => {
+          setUser(res.data.user);
+        })
+        .catch(() => {
+          // Token geçersizse temizle
+          TokenManager.clear();
+          setUser(null);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
-  const login = (userData) => {
-    // Finans projesi için sadeleştirdik
-    const userProfile = {
-      username: userData.username,
-      email: userData.email,
-      balance: 100000, // Demo bakiye
+  useEffect(() => {
+    const handleExpiredAuth = () => {
+      TokenManager.clear();
+      setUser(null);
+      navigate('/login');
     };
-    setUser(userProfile);
-    localStorage.setItem('user', JSON.stringify(userProfile));
-    navigate('/chart'); // Giriş yapınca grafiğe atar
+
+    window.addEventListener('auth:expired', handleExpiredAuth);
+    return () => window.removeEventListener('auth:expired', handleExpiredAuth);
+  }, [navigate]);
+
+  const login = (userData, accessToken, refreshToken) => {
+    TokenManager.setTokens(accessToken, refreshToken);
+    setUser(userData);
+    navigate('/');
   };
 
   const logout = () => {
+    TokenManager.clear();
     setUser(null);
-    localStorage.removeItem('user');
     navigate('/login');
   };
 

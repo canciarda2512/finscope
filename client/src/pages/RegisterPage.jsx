@@ -1,74 +1,123 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import APIClient from '../services/APIClient';
 
 export default function RegisterPage() {
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  function handleRegister() {
-    console.log('Registering user:', { username, email, password })
-  }
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await APIClient.post('/auth/register', {
+        email: formData.email,
+        password: formData.password,
+      });
+
+      window.alert('Registration successful. You can now sign in.');
+      navigate('/login');
+    } catch {
+      setError('Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="bg-slate-950 min-h-screen flex items-center justify-center p-4">
-      <div className="bg-slate-900 p-8 rounded-2xl w-full max-w-md border border-slate-800 shadow-2xl">
-        
-        <div className="mb-8">
-          <h1 className="text-white text-3xl font-bold mb-2">Create Account</h1>
-          <p className="text-slate-500 text-sm">Join FinScope to start tracking assets</p>
-        </div>
+    <div className="min-h-screen bg-[#020617] flex items-center justify-center p-4">
+      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-8 w-full max-w-md">
+        <h1 className="text-2xl font-bold text-white mb-2">Create Account</h1>
+        <p className="text-slate-400 text-sm mb-6">Join FinScope</p>
 
-        <div className="flex flex-col gap-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-slate-400 text-xs font-bold uppercase mb-2 block ml-1">Username</label>
-            <input
-              type="text"
-              placeholder="e.g. crypto_trader"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              className="w-full bg-slate-800 text-white px-4 py-3 rounded-xl outline-none border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="text-slate-400 text-xs font-bold uppercase mb-2 block ml-1">Email Address</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Email
+            </label>
             <input
               type="email"
-              placeholder="name@example.com"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full bg-slate-800 text-white px-4 py-3 rounded-xl outline-none border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-blue-500"
             />
           </div>
 
           <div>
-            <label className="text-slate-400 text-xs font-bold uppercase mb-2 block ml-1">Password</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Password
+            </label>
             <input
               type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full bg-slate-800 text-white px-4 py-3 rounded-xl outline-none border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              required
+              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-blue-500"
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Confirm Password
+            </label>
+            <input
+              type="password"
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              required
+              className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-white outline-none focus:border-blue-500"
+            />
+          </div>
+
+          {error && (
+            <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-2 rounded text-sm">
+              {error}
+            </div>
+          )}
+
           <button
-            onClick={handleRegister}
-            className="bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-900/20 transition-all active:scale-[0.98] mt-2"
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white font-bold py-2 px-4 rounded transition"
           >
-            Get Started
+            {loading ? 'Creating account...' : 'Create Account'}
           </button>
-        </div>
+        </form>
 
-        <div className="mt-8 pt-6 border-t border-slate-800">
-          <p className="text-slate-500 text-sm text-center">
-            Already have an account?{' '}
-            <Link to="/login" className="text-blue-400 hover:text-blue-300 font-bold transition">Sign In</Link>
-          </p>
-        </div>
-
+        <p className="mt-6 text-center text-sm text-slate-400">
+          Already have an account?{' '}
+          <Link to="/login" className="text-blue-400 hover:text-blue-300">
+            Sign In
+          </Link>
+        </p>
       </div>
     </div>
-  )
+  );
 }

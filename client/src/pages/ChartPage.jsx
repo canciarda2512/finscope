@@ -1,219 +1,382 @@
-import { useEffect, useState, useRef } from 'react';
-import { createChart } from 'lightweight-charts';
-import { MousePointer2, Minus, TrendingUp, Search } from 'lucide-react';
-import { generateMockCandles } from '../services/mockData';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import APIClient from '../services/APIClient';
+import {
+  MousePointer2, Minus, PencilLine, Brain, AlertTriangle, TrendingUp
+} from 'lucide-react';
+import ChartView from '../components/ChartView';
+import AlertPanel from '../components/AlertPanel';
+import TradingPanel from '../components/TradingPanel';
 
-const TIMEFRAMES = ['5m', '1H', '1D', '1W', '1M'];
+const TIMEFRAMES = ['1m', '5m', '1D', '1W', '1M'];
+const INDICATORS = ['SMA', 'EMA', 'RSI', 'MACD', 'BB'];
+const AVAILABLE_SYMBOLS = [
+  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+  'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
+  'TRXUSDT', 'MATICUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT',
+  'ATOMUSDT', 'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT',
+  'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
+];
 
 export default function ChartPage() {
+  const [searchParams] = useSearchParams();
+  const initialSymbol = searchParams.get('symbol')?.toUpperCase();
+  const [candles, setCandles] = useState([]);
+  const [liveCandle, setLiveCandle] = useState(null);
   const [timeframe, setTimeframe] = useState('5m');
   const [activeTool, setActiveTool] = useState('cursor');
-  const chartContainerRef = useRef(null);
-  const chartRef = useRef(null);
-  const candleSeriesRef = useRef(null);
-  const toolRef = useRef('cursor');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [queryStats, setQueryStats] = useState(null);
+  const [currentPrice, setCurrentPrice] = useState(null);
+  const [selectedOrderPrice, setSelectedOrderPrice] = useState('');
+  const [activeIndicators, setActiveIndicators] = useState([]);
+  const [symbol, setSymbol] = useState(
+    AVAILABLE_SYMBOLS.includes(initialSymbol) ? initialSymbol : 'BTCUSDT'
+  );
+
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
+  const [aiError, setAiError] = useState(null);
+
+  const [anomalyLoading, setAnomalyLoading] = useState(false);
+  const [anomalies, setAnomalies] = useState([]);
+  const [anomalyError, setAnomalyError] = useState(null);
+  const [anomalyActive, setAnomalyActive] = useState(false);
+
+  const socketRef = useRef(null);
 
   useEffect(() => {
-    toolRef.current = activeTool;
-  }, [activeTool]);
+    const querySymbol = searchParams.get('symbol')?.toUpperCase();
+    if (AVAILABLE_SYMBOLS.includes(querySymbol) && querySymbol !== symbol) {
+      setSymbol(querySymbol);
+    }
+  }, [searchParams, symbol]);
 
-  const processData = (data) => {
-    return data
-      .sort((a, b) => a.time - b.time)
-      .filter((value, index, self) => 
-        index === self.findIndex((t) => t.time === value.time)
-      );
-  };
+  useEffect(() => {
+    const fetchCandles = async () => {
+      setLoading(true);
+      setError(null);
+      setAiResult(null);
+      setAiError(null);
+      setAnomalies([]);
+      setAnomalyError(null);
+      setAnomalyActive(false);
+      setLiveCandle(null);
 
-  const renderChart = (rawData) => {
-    if (!chartContainerRef.current) return;
-    const container = chartContainerRef.current;
-    container.innerHTML = '';
+      try {
+        const res = await APIClient.get('/chart/candles', {
+          params: { symbol, timeframe },
+        });
 
-    const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 450,
-      layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
-      grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-      timeScale: { borderColor: '#334155', timeVisible: true },
-    });
+        const formattedCandles = (res.data?.candles || [])
+          .map(c => ({
+            time: Number(c.time),
+            open: Number(c.open),
+            high: Number(c.high),
+            low: Number(c.low),
+            close: Number(c.close),
+          }))
+          .sort((a, b) => a.time - b.time);
 
-    const series = chart.addCandlestickSeries({
-      upColor: '#22c55e',
-      downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
-    });
+        setCandles(formattedCandles);
 
-    const cleanData = processData(rawData);
-    series.setData(cleanData);
-    chart.timeScale().fitContent();
-    candleSeriesRef.current = series;
-    chartRef.current = chart;
-
-    chart.subscribeClick((param) => {
-      if (param.point && toolRef.current === 'hline') {
-        const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-        if (price) {
-          candleSeriesRef.current.createPriceLine({
-            price,
-            color: '#3b82f6',
-            lineWidth: 2,
-            title: `Lvl ${price.toFixed(2)}`,
-          });
-          setActiveTool('cursor');
+        if (formattedCandles.length > 0) {
+          const last = formattedCandles[formattedCandles.length - 1];
+          setCurrentPrice(last.close);
+          setSelectedOrderPrice(last.close.toFixed(2));
         }
+
+        setQueryStats({
+          queryTime: res.data?.queryTime || '0ms',
+          rowsScanned: res.data?.rowsScanned || 0,
+        });
+      } catch (err) {
+        console.error('Fetch error:', err);
+        setError('Backend baglantisi kurulamadi.');
+      } finally {
+        setLoading(false);
       }
-    });
+    };
+
+    fetchCandles();
+
+    if (socketRef.current) socketRef.current.close();
+    const socket = new WebSocket('ws://localhost:4000');
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.s !== symbol) return;
+
+        const k = msg.k;
+        const newCandle = {
+          time: Math.floor(k.t / 1000),
+          open: parseFloat(k.o),
+          high: parseFloat(k.h),
+          low: parseFloat(k.l),
+          close: parseFloat(k.c),
+        };
+
+        setLiveCandle(newCandle);
+        setCurrentPrice(newCandle.close);
+      } catch (err) {
+        console.warn('WS parse error:', err);
+      }
+    };
+    socket.onerror = (err) => console.warn('WebSocket error:', err);
+    socketRef.current = socket;
+
+    return () => {
+      if (socketRef.current) socketRef.current.close();
+    };
+  }, [symbol, timeframe]);
+
+  const handleAIPrediction = async () => {
+    if (aiLoading) return;
+    if (aiResult) {
+      setAiResult(null);
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const res = await APIClient.post('/chart/predict', { symbol, timeframe });
+
+      if (res.data?.error) {
+        setAiError(res.data.error);
+      } else {
+        setAiResult(res.data);
+      }
+    } catch (err) {
+      setAiError('AI servisi yanit vermedi. Lutfen tekrar deneyin.');
+      console.error('AI prediction error:', err);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
-  useEffect(() => {
-    const rawData = generateMockCandles(200, timeframe);
-    renderChart(rawData);
-    const handleResize = () => {
-      if (chartRef.current && chartContainerRef.current) {
-        chartRef.current.applyOptions({ width: chartContainerRef.current.clientWidth });
+  const handleAnomalyDetection = async () => {
+    if (anomalyLoading) return;
+
+    if (anomalyActive) {
+      setAnomalyActive(false);
+      setAnomalies([]);
+      setAnomalyError(null);
+      return;
+    }
+
+    setAnomalyLoading(true);
+    setAnomalyError(null);
+
+    try {
+      const res = await APIClient.post('/chart/anomalies', { symbol, timeframe });
+
+      if (res.data?.error) {
+        setAnomalyError(res.data.error);
+      } else {
+        setAnomalies(res.data.anomalies || []);
+        setAnomalyActive(true);
       }
-    };
-    window.addEventListener('resize', handleResize);
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (chartRef.current) chartRef.current.remove();
-    };
-  }, [timeframe]);
+    } catch (err) {
+      setAnomalyError('Anomali servisi yanit vermedi.');
+      console.error('Anomaly detection error:', err);
+    } finally {
+      setAnomalyLoading(false);
+    }
+  };
+
+  const toggleIndicator = (ind) => setActiveIndicators(prev =>
+    prev.includes(ind) ? prev.filter(i => i !== ind) : [...prev, ind]
+  );
 
   return (
-    <div className="bg-[#020617] min-h-screen text-slate-300 font-sans pb-12">
-      <div className="flex flex-col lg:flex-row p-4 gap-4 max-w-[1600px] mx-auto">
-        
-        {/* SOL PANEL: CHART & LISTS */}
-        <div className="flex-1 flex flex-col gap-4">
-          
-          {/* CHART CONTROLS */}
-          <div className="bg-[#0f172a] p-3 rounded-xl border border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h2 className="text-white font-bold text-lg flex items-center gap-2">
-                BTC/USDT <span className="text-green-500 text-sm font-normal">+2.34%</span>
-              </h2>
-              <div className="flex bg-slate-950 rounded-lg p-1 gap-1 border border-slate-800">
-                {TIMEFRAMES.map(tf => (
-                  <button 
-                    key={tf} 
-                    onClick={() => setTimeframe(tf)} 
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${timeframe === tf ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-              <button onClick={() => setActiveTool('cursor')} className={`p-2 rounded-md transition-all ${activeTool === 'cursor' ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-white'}`}>
-                <MousePointer2 size={18}/>
-              </button>
-              <button onClick={() => setActiveTool('hline')} className={`p-2 rounded-md transition-all ${activeTool === 'hline' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-white'}`}>
-                <Minus size={18}/>
-              </button>
-            </div>
-          </div>
+    <div className="bg-[#020617] min-h-screen p-4 text-slate-300">
+      <div className="flex items-center gap-4 mb-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp size={18} className="text-yellow-400" />
+          <select
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            className="bg-[#0f172a] border border-slate-700 text-white text-sm font-bold rounded px-2 py-1 outline-none focus:border-blue-500"
+          >
+            {AVAILABLE_SYMBOLS.map(s => (
+              <option key={s} value={s}>{s.replace('USDT', '/USDT')}</option>
+            ))}
+          </select>
+        </div>
+        {currentPrice && (
+          <span className="text-green-400 font-mono text-lg font-bold">
+            ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        )}
+        {loading && <span className="text-slate-500 text-xs animate-pulse">Yukleniyor...</span>}
+        {error && <span className="text-red-400 text-xs">{error}</span>}
+      </div>
 
-          {/* CHART CONTAINER */}
-          <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-2 shadow-2xl overflow-hidden min-h-[460px]">
-            <div ref={chartContainerRef} className="w-full h-full" />
-          </div>
-
-          {/* LOWER LISTS */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-4">
-              <h3 className="text-[10px] font-bold uppercase text-slate-500 mb-4 tracking-widest">Limit Orders</h3>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-sm bg-slate-950 p-3 rounded-lg border-l-4 border-green-500">
-                  <div className="flex flex-col">
-                    <span className="font-bold">BUY BTC</span>
-                    <span className="text-[10px] text-slate-500">$65,000.00</span>
-                  </div>
-                  <span className="text-blue-400 cursor-pointer text-xs font-bold">Cancel</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-4">
-              <h3 className="text-[10px] font-bold uppercase text-slate-500 mb-4 tracking-widest">Positions</h3>
-              <div className="flex justify-between items-center text-sm bg-slate-950 p-4 rounded-lg border border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-orange-500/10 rounded-full flex items-center justify-center text-orange-500 font-bold text-xs">B</div>
-                  <div>
-                    <p className="font-bold">BTC/USDT</p>
-                    <p className="text-[10px] text-slate-500">Long • 0.05 BTC</p>
-                  </div>
-                </div>
-                <span className="text-green-500 font-bold">+$412.50</span>
-              </div>
-            </div>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-[#0f172a] p-2 rounded-xl border border-slate-800 mb-4">
+        <div className="flex gap-1">
+          {TIMEFRAMES.map(tf => (
+            <button key={tf} onClick={() => setTimeframe(tf)}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition ${timeframe === tf ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+              {tf}
+            </button>
+          ))}
         </div>
 
-        {/* SAĞ PANEL: ORDER & WATCHLIST */}
-        <div className="w-full lg:w-80 flex flex-col gap-4">
-          <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-5 shadow-lg">
-            <h3 className="text-white font-bold mb-4 text-sm">Order Panel</h3>
-            <div className="flex bg-slate-950 rounded-xl p-1 mb-6 border border-slate-800">
-              <button className="flex-1 py-2 rounded-lg bg-green-600 text-white text-xs font-bold shadow-lg shadow-green-900/20">Buy</button>
-              <button className="flex-1 py-2 rounded-lg text-slate-500 text-xs font-bold">Sell</button>
-            </div>
-            <div className="space-y-4">
-              <div className="relative">
-                <label className="text-[9px] uppercase font-bold text-slate-500 absolute -top-2 left-3 bg-[#0f172a] px-1">Amount (USDT)</label>
-                <input type="number" defaultValue="1000" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition" />
-              </div>
-              <div className="relative">
-                <label className="text-[9px] uppercase font-bold text-slate-500 absolute -top-2 left-3 bg-[#0f172a] px-1">Limit Price</label>
-                <input type="number" defaultValue="64000" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition" />
-              </div>
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Balance:</span>
-                  <span className="text-white font-bold">$95,235.00</span>
-                </div>
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Est. BTC:</span>
-                  <span className="text-white font-bold">0.0156 BTC</span>
-                </div>
-              </div>
-              <button className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-green-900/30">
-                Buy BTC
-              </button>
-            </div>
-          </div>
+        <div className="flex items-center gap-1">
+          {INDICATORS.map(ind => (
+            <button
+              key={ind}
+              onClick={() => toggleIndicator(ind)}
+              className={`px-2 py-1 border text-[9px] uppercase rounded transition font-bold ${
+                activeIndicators.includes(ind)
+                  ? 'border-blue-500 bg-blue-500/10 text-blue-300'
+                  : 'border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {ind}
+            </button>
+          ))}
+        </div>
 
-          <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-5">
-            <h3 className="text-[10px] font-bold uppercase text-slate-500 mb-4 tracking-widest flex justify-between">Watch List <Search size={14}/></h3>
-            <div className="space-y-4">
-              {[
-                { s: 'BTC', p: '67,432', c: '+2.34%', up: true },
-                { s: 'ETH', p: '3,541', c: '+1.12%', up: true },
-                { s: 'SOL', p: '142.50', c: '-0.87%', up: false }
-              ].map(coin => (
-                <div key={coin.s} className="flex justify-between items-center text-xs">
-                  <span className="font-bold">{coin.s}</span>
-                  <span className="font-mono text-slate-400">${coin.p}</span>
-                  <span className={`font-bold ${coin.up ? 'text-green-500' : 'text-red-500'}`}>{coin.c}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="flex items-center gap-1">
+          {[
+            { id: 'cursor', icon: <MousePointer2 size={15} />, title: 'Cursor' },
+            { id: 'tline', icon: <PencilLine size={15} />, title: 'Trendline' },
+            { id: 'hline', icon: <Minus size={15} />, title: 'Horizontal Line' },
+          ].map(({ id, icon, title }) => (
+            <button key={id} onClick={() => setActiveTool(id)} title={title}
+              className={`p-2 rounded-lg transition ${activeTool === id ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>
+              {icon}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleAIPrediction}
+            disabled={aiLoading}
+            title="AI tabanli trend tahmini"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
+              ${aiResult
+                ? 'bg-purple-700 text-white ring-1 ring-purple-400'
+                : 'bg-purple-950 border border-purple-700 text-purple-300 hover:bg-purple-900'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            <Brain size={13} />
+            {aiLoading
+              ? 'Tahmin ediliyor...'
+              : aiResult
+                ? `${aiResult.direction === 'UP' ? 'UP' : 'DOWN'} (${aiResult.confidence}%)`
+                : 'AI Prediction'}
+          </button>
+
+          <button
+            onClick={handleAnomalyDetection}
+            disabled={anomalyLoading}
+            title="Volume spike ve fiyat anomalisi tespiti"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
+              ${anomalyActive
+                ? 'bg-orange-600 text-white ring-1 ring-orange-400'
+                : 'bg-orange-950 border border-orange-700 text-orange-300 hover:bg-orange-900'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            <AlertTriangle size={13} />
+            {anomalyLoading
+              ? 'Analiz ediliyor...'
+              : anomalyActive
+                ? `${anomalies.length} anomali`
+                : 'Anomaly Detection'}
+          </button>
         </div>
       </div>
 
-      {/* FOOTER STATUS BAR */}
-      <footer className="border-t border-slate-800 bg-[#0f172a] px-6 py-2 flex justify-between items-center text-[10px] text-slate-500 font-mono fixed bottom-0 w-full">
-        <div className="flex gap-4">
-          <span className="flex items-center gap-1"><div className="w-1 h-1 bg-green-500 rounded-full animate-pulse"></div> 12ms 11,247,832 rows scanned</span>
-          <span className="text-amber-500">⚠️ 2 anomalies detected</span>
+      {activeTool === 'tline' && (
+        <div className="mb-3 text-[11px] text-cyan-400 bg-cyan-950 border border-cyan-800 rounded px-3 py-1.5 w-fit">
+          Grafik uzerinde birinci noktaya tiklayin
         </div>
-        <span className="text-blue-400">Upward trend - 73% confidence</span>
-      </footer>
+      )}
+
+      {aiResult && (
+        <div className="mb-3 flex items-center gap-3 bg-purple-950 border border-purple-700 rounded-lg px-4 py-2 text-sm text-purple-300 w-fit">
+          <Brain size={14} />
+          <span>
+            <strong className={aiResult.direction === 'UP' ? 'text-green-400' : 'text-red-400'}>
+              {aiResult.direction === 'UP' ? 'YUKARI' : 'ASAGI'} trend
+            </strong>
+            {' '}Guven: <strong>{aiResult.confidence}%</strong>
+          </span>
+          <button onClick={() => setAiResult(null)} className="ml-2 text-purple-400 hover:text-white text-xs">x</button>
+        </div>
+      )}
+
+      {aiError && (
+        <div className="mb-3 text-[11px] text-red-400 bg-red-950 border border-red-800 rounded px-3 py-1.5 w-fit flex items-center gap-2">
+          <Brain size={11} /> AI Prediction: {aiError}
+          <button onClick={() => setAiError(null)} className="ml-1 opacity-60 hover:opacity-100">x</button>
+        </div>
+      )}
+
+      {anomalyActive && anomalies.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {anomalies.map((a, i) => (
+            <div key={i}
+              className={`text-[10px] px-2 py-1 rounded border flex items-center gap-1 font-mono
+              ${a.severity === 'HIGH'
+                  ? 'bg-red-950 border-red-700 text-red-300'
+                  : 'bg-orange-950 border-orange-700 text-orange-300'}`}>
+              <AlertTriangle size={9} />
+              {a.type} - {new Date(a.time * 1000).toLocaleTimeString('tr-TR')} - {a.severity}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {anomalyError && (
+        <div className="mb-3 text-[11px] text-orange-400 bg-orange-950 border border-orange-800 rounded px-3 py-1.5 w-fit flex items-center gap-2">
+          <AlertTriangle size={11} /> Anomaly Detection: {anomalyError}
+          <button onClick={() => setAnomalyError(null)} className="ml-1 opacity-60 hover:opacity-100">x</button>
+        </div>
+      )}
+
+      <div className="flex gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-2">
+            <ChartView
+              key={`${symbol}-${timeframe}`}
+              candles={candles}
+              liveCandle={liveCandle}
+              timeframe={timeframe}
+              activeTool={activeTool}
+              aiPrediction={aiResult}
+              anomalies={anomalyActive ? anomalies : []}
+              indicators={activeIndicators}
+              onPriceSelect={price => setSelectedOrderPrice(price?.toFixed(2) || '')}
+            />
+          </div>
+          <div className="mt-2 flex items-center gap-6 text-[11px] text-slate-600">
+            {queryStats && (
+              <span>
+                <span className="text-slate-400">{queryStats.queryTime}</span> | <span className="text-slate-400">{queryStats.rowsScanned?.toLocaleString()}</span> rows scanned
+              </span>
+            )}
+            {anomalyActive && (
+              <span className="text-orange-400">{anomalies.length} anomali tespit edildi</span>
+            )}
+          </div>
+        </div>
+
+        <div className="w-64 flex-shrink-0 flex flex-col gap-3">
+          <TradingPanel
+            symbol={symbol}
+            currentPrice={currentPrice}
+            selectedPrice={selectedOrderPrice}
+          />
+          <AlertPanel symbol={symbol} currentPrice={currentPrice} />
+        </div>
+      </div>
     </div>
   );
 }

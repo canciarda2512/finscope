@@ -7,10 +7,10 @@ import WatchlistPage from './pages/WatchlistPage'; // Orijinal sayfan
 import ScreenerPage from './pages/ScreenerPage';   // Yeni oluşturduğumuz sayfa
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import MultiChartPage from './pages/MultiChartPage';
 
 // Henüz dosyası olmayan sayfalar için basit taslaklar
-const StrategyPage = () => <div className="p-20 text-white opacity-20 text-center text-2xl font-bold">Strategy Builder Coming Soon...</div>;
-const MultiChartPage = () => <div className="p-20 text-white opacity-20 text-center text-2xl font-bold">Multi-Chart Coming Soon...</div>;
+const StrategyPage = () => <div className="p-20 text-white opacity-20 text-center text-2xl font-bold">Strategy Builder ...</div>;
 
 // Korumalı rota bileşeni
 const ProtectedRoute = ({ children }) => {

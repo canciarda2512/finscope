@@ -1,60 +1,70 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import './config/env.js';
+import { createServer } from 'http';
+import routes from './routes/index.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { initClickHouse } from './services/ClickHouseClient.js';
+import { runDataFetcher } from './background/DataFetcher.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const CLIENT_PORT = process.env.CLIENT_PORT || 3000;
 
+// ── Middleware ──
 app.use(cors({
-  origin: '*',
+  origin: `http://localhost:${CLIENT_PORT}`,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-
 app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.json({ message: "FinScope Backend Working", status: "OK" });
-});
+// ── Routes ──
+app.use('/api', routes);
 
-app.get('/health', (req, res) => {
-  res.json({ status: "healthy" });
-});
+// ── Health check ──
+app.get('/', (req, res) => res.json({ message: 'FinScope Backend', status: 'OK' }));
+app.get('/health', (req, res) => res.json({ status: 'healthy' }));
 
-app.get('/chart/candles', (req, res) => {
-  const { symbol = 'BTCUSDT', timeframe = '1D' } = req.query;
+// ── Error handler (en sona) ──
+app.use(errorHandler);
 
-  const count = timeframe === '1D' ? 150 : timeframe === '1W' ? 70 : 30;
+// ── HTTP Server ──
+const httpServer = createServer(app);
 
-  const mockData = Array.from({ length: count }, (_, i) => {
-    const base = 62500;
-    const open = base + (Math.random() * 1200 - 600);
-    const close = open + (Math.random() * 900 - 450);
-    const high = Math.max(open, close) + Math.random() * 400;
-    const low = Math.min(open, close) - Math.random() * 400;
+// ── Başlatma sırası ──
+async function start() {
+  try {
+    // 1. ClickHouse bağlan ve tabloları oluştur
+    await initClickHouse();
+    console.log('✅ ClickHouse bağlantısı kuruldu.');
 
-    return {
-      time: Math.floor(Date.now() / 1000) - (count - i) * 60,
-      open: Number(open.toFixed(2)),
-      high: Number(high.toFixed(2)),
-      low: Number(low.toFixed(2)),
-      close: Number(close.toFixed(2)),
-      volume: Number((Math.random() * 1500 + 400).toFixed(2))
-    };
-  });
+    // 2. HTTP server başlat ve WebSocket'i anında yükleyip üzerine kur
+    const server = httpServer.listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Server running on http://localhost:${PORT}`);
 
-  res.json({
-    candles: mockData,
-    symbol,
-    timeframe,
-    queryTime: "8ms",
-    rowsScanned: mockData.length
-  });
-});
+      // Dinamik import: Sadece server başarıyla ayağa kalktığında yükle
+      import('./websocket/WebSocketServer.js').then(module => {
+        const setupWS = module.default;
+        setupWS(server);
+      }).catch(err => {
+        console.error('❌ WebSocket BAŞLATMA HATASI (BURAYA DİKKAT):', err);
+      });
+    });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+    // 3. Tarihsel veri doldur (arka planda çalışır, server'ı bloklamaz)
+    console.log('📦 DataFetcher başlatılıyor...');
+    runDataFetcher().catch(err => {
+      console.error('❌ DataFetcher hatası:', err.message);
+    });
+
+  } catch (error) {
+    console.error('❌ Server başlatılırken hata:', error.message);
+    process.exit(1);
+  }
+}
+
+start();
+
+export { httpServer };
