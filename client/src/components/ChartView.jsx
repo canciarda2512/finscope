@@ -145,6 +145,7 @@ export default function ChartView({
   const drawTrendline = useCallback((p1, p2) => {
     if (!chartRef.current) return;
     const [from, to] = p1.time <= p2.time ? [p1, p2] : [p2, p1];
+    if (from.time === to.time) return;
     const s = chartRef.current.addLineSeries({
       color: '#38bdf8',
       lineWidth: 2,
@@ -209,6 +210,8 @@ export default function ChartView({
 
           if (![fromTime, fromPrice, toTime, toPrice].every(Number.isFinite)) return;
 
+          if (fromTime === toTime) return;
+          
           const series = chartRef.current.addLineSeries({
             color: '#38bdf8',
             lineWidth: 2,

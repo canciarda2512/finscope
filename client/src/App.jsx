@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/Authcontext';
 import Navbar from './components/Navbar';
 import ChartPage from './pages/ChartPage';
 import PortfolioPage from './pages/PortfolioPage'; // Orijinal sayfan
@@ -8,9 +8,8 @@ import ScreenerPage from './pages/ScreenerPage';   // Yeni oluşturduğumuz sayf
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import MultiChartPage from './pages/MultiChartPage';
+import StrategyPage from './pages/StrategyPage';
 
-// Henüz dosyası olmayan sayfalar için basit taslaklar
-const StrategyPage = () => <div className="p-20 text-white opacity-20 text-center text-2xl font-bold">Strategy Builder ...</div>;
 
 // Korumalı rota bileşeni
 const ProtectedRoute = ({ children }) => {

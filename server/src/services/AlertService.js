@@ -14,7 +14,7 @@ export async function checkAndTriggerAlerts(symbol, price) {
   const { rows } = await query(
     `
     SELECT id, userId, condition, targetPrice
-    FROM alerts
+    FROM alerts FINAL
     WHERE symbol = {symbol:String}
       AND triggered = 0
       AND (
@@ -33,8 +33,7 @@ export async function checkAndTriggerAlerts(symbol, price) {
       `
       ALTER TABLE alerts
       UPDATE triggered = 1,
-             triggeredAt = now64(3),
-             missedAt = now64(3)
+             triggeredAt = now64(3)
       WHERE symbol = {symbol:String}
         AND id = {id:String}
         AND triggered = 0

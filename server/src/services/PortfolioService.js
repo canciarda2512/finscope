@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { execute, insert, query } from './ClickHouseClient.js';
 import { createNotification } from './NotificationService.js';
+import { getLatestPriceFromCache } from './RedisBuffer.js';
 
 export const DEMO_START_BALANCE = 100000;
 const processingLimitOrderIds = new Set();
@@ -85,7 +86,7 @@ export async function ensurePortfolio(userId) {
   const { rows } = await query(
     `
     SELECT *
-    FROM portfolios
+    FROM portfolios FINAL
     WHERE userId = {userId:String}
     LIMIT 1
     `,
@@ -109,6 +110,10 @@ export async function ensurePortfolio(userId) {
 
 export async function getLatestPrice(symbol) {
   const normalizedSymbol = String(symbol || '').toUpperCase();
+
+  const cached = await getLatestPriceFromCache(normalizedSymbol);
+  if (cached !== null && Number.isFinite(cached)) return cached;
+
   const { rows } = await query(
     `
     SELECT close
@@ -127,7 +132,7 @@ export async function getPositions(userId) {
   const { rows } = await query(
     `
     SELECT *
-    FROM positions
+    FROM positions FINAL
     WHERE userId = {userId:String}
       AND quantity > 0
     ORDER BY symbol ASC
@@ -156,7 +161,7 @@ export async function getOpenLimitOrders(userId) {
   const { rows } = await query(
     `
     SELECT *
-    FROM limit_orders
+    FROM limit_orders FINAL
     WHERE userId = {userId:String}
       AND status = 'pending'
     ORDER BY createdAt DESC
@@ -188,7 +193,7 @@ export async function createLimitOrder({ userId, symbol, type, targetPrice, quan
     const { rows: positionRows } = await query(
       `
       SELECT quantity
-      FROM positions
+      FROM positions FINAL
       WHERE userId = {userId:String}
         AND symbol = {symbol:String}
       LIMIT 1
@@ -245,7 +250,7 @@ export async function executeTrade({ userId, symbol, type, price, quantity }) {
   const { rows: positionRows } = await query(
     `
     SELECT *
-    FROM positions
+    FROM positions FINAL
     WHERE userId = {userId:String}
       AND symbol = {symbol:String}
     LIMIT 1
@@ -331,7 +336,7 @@ export async function executeTriggeredLimitOrders(symbol, currentPrice) {
   const { rows: orders } = await query(
     `
     SELECT *
-    FROM limit_orders
+    FROM limit_orders FINAL
     WHERE symbol = {symbol:String}
       AND status = 'pending'
       AND (
@@ -453,6 +458,12 @@ export async function getPerformanceDatapoints(userId) {
   }];
 
   for (const trade of ascendingTrades) {
+    const tradeTotal = toNumber(trade.total);
+    if (trade.type === 'buy') {
+      value -= tradeTotal; 
+    } else if (trade.type === 'sell') {
+      value += tradeTotal; 
+    }
     datapoints.push({
       date: trade.timestamp,
       value,

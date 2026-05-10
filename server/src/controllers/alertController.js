@@ -20,7 +20,7 @@ router.get('/', async (req, res, next) => {
     const result = await query(
       `
       SELECT *
-      FROM alerts
+      FROM alerts Final
       WHERE userId = {userId:String}
       ORDER BY createdAt DESC
       `,

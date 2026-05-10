@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import APIClient from '../services/APIClient';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/Authcontext';
 
 function isTriggered(alert) {
   return alert.triggered === 1 || alert.triggered === '1' || alert.triggered === true;
