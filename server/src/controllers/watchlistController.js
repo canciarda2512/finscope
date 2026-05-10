@@ -48,7 +48,7 @@ async function getUSDTSymbols() {
 
 async function getUserSymbols(userId) {
   const { rows } = await query(
-    `SELECT DISTINCT symbol FROM watchlists WHERE userId = {userId:String} ORDER BY symbol ASC`,
+    `SELECT DISTINCT symbol FROM watchlists FINAL WHERE userId = {userId:String} ORDER BY symbol ASC`,
     { userId }
   );
 
@@ -131,7 +131,7 @@ router.post('/', async (req, res, next) => {
 
     // Check for duplicate
     const { rows } = await query(
-      `SELECT count() AS cnt FROM watchlists WHERE userId = {userId:String} AND symbol = {symbol:String}`,
+      `SELECT count() AS cnt FROM watchlists FINAL WHERE userId = {userId:String} AND symbol = {symbol:String}`,
       { userId: req.userId, symbol }
     );
     if (Number(rows[0]?.cnt) > 0) {

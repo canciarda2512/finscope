@@ -25,7 +25,7 @@ function getOptionalUserId(req) {
 // ── Timeframe maps ──
 const TF_INTERVAL = {
   '1m': 'toStartOfMinute(timestamp)',
-  '5m': 'toStartOfFiveMinutes(timestamp)',
+  '5m': 'toStartOfFiveMinute(timestamp)',
   '1D': 'toStartOfDay(timestamp)',
   '1W': 'toStartOfWeek(timestamp)',
   '1M': 'toStartOfMonth(timestamp)',

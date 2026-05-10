@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { initClickHouse } from './services/ClickHouseClient.js';
+import { initRedis, shutdownRedis } from './services/RedisBuffer.js';
 import { runDataFetcher } from './background/DataFetcher.js';
 
 const app = express();
@@ -40,6 +41,8 @@ async function start() {
     await initClickHouse();
     console.log('✅ ClickHouse bağlantısı kuruldu.');
 
+    await initRedis();
+
     // 2. HTTP server başlat ve WebSocket'i anında yükleyip üzerine kur
     const server = httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Server running on http://localhost:${PORT}`);
@@ -66,5 +69,15 @@ async function start() {
 }
 
 start();
+
+process.on('SIGINT', async () => {
+  console.log('\nShutting down...');
+  await shutdownRedis();
+  process.exit(0);
+});
+process.on('SIGTERM', async () => {
+  await shutdownRedis();
+  process.exit(0);
+});
 
 export { httpServer };

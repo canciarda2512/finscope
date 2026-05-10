@@ -11,8 +11,11 @@ import strategyController from '../controllers/strategyController.js';
 import notificationController from '../controllers/notificationController.js';
 
 import authMiddleware from '../middleware/authMiddleware.js';
+import rateLimiter from '../middleware/rateLimiter.js';
 
 const router = Router();
+
+router.use(rateLimiter);
 
 // ── Public routes ──
 router.use('/auth', authController);
