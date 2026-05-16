@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/Authcontext';
+import { ThemeProvider } from './context/ThemeContext';
 import Navbar from './components/Navbar';
 import ChartPage from './pages/ChartPage';
 import PortfolioPage from './pages/PortfolioPage'; // Orijinal sayfan
@@ -25,6 +26,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ThemeProvider>
         <div className="flex flex-col min-h-screen bg-[#020617]">
           {/* Navbar artık AuthProvider içinde olduğu için user verilerini çeker */}
           <Navbar />
@@ -66,6 +68,7 @@ export default function App() {
             </Routes>
           </main>
         </div>
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { query } from '../services/ClickHouseClient.js';
+import { query, insert, execute } from '../services/ClickHouseClient.js';
 import * as IndicatorCalculator from '../services/IndicatorCalculator.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 
 const router = Router();
 
@@ -225,6 +226,77 @@ router.get('/drawings', async (req, res) => {
     console.error('❌ Drawings fetch error:', err);
     // Return 500 with flag so frontend can distinguish from "no drawings"
     return res.status(500).json({ drawings: [], error: 'Çizimler yüklenemedi.' });
+  }
+});
+
+// ── POST /api/chart/drawings ──
+router.post('/drawings', authMiddleware, async (req, res) => {
+  const { symbol, timeframe, type, coordinates } = req.body;
+  const userId = req.userId;
+
+  if (!symbol || !timeframe || !type || !coordinates) {
+    return res.status(400).json({ error: 'symbol, timeframe, type ve coordinates zorunludur.' });
+  }
+  if (!validateParams(symbol, timeframe, res)) return;
+  if (!['hline', 'trendline'].includes(type)) {
+    return res.status(400).json({ error: "Geçersiz tip. 'hline' veya 'trendline' olmalıdır." });
+  }
+
+  let coordsStr;
+  try {
+    coordsStr = typeof coordinates === 'string' ? coordinates : JSON.stringify(coordinates);
+    JSON.parse(coordsStr); // validate JSON
+  } catch {
+    return res.status(400).json({ error: 'coordinates geçerli bir JSON olmalıdır.' });
+  }
+
+  const id = randomUUID();
+  const createdAt = new Date().toISOString().replace('T', ' ').replace('Z', '');
+
+  try {
+    await insert('drawings', [{
+      id,
+      userId: userId || '',
+      symbol: symbol.toUpperCase(),
+      timeframe,
+      type,
+      coordinates: coordsStr,
+      createdAt,
+    }]);
+    return res.status(201).json({ id, message: 'Çizim kaydedildi.' });
+  } catch (err) {
+    console.error('❌ Drawing save error:', err);
+    return res.status(500).json({ error: 'Çizim kaydedilemedi.' });
+  }
+});
+
+// ── DELETE /api/chart/drawings/:id ──
+router.delete('/drawings/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+
+  if (!id) return res.status(400).json({ error: 'id zorunludur.' });
+
+  try {
+    // Ownership check
+    const { rows } = await query(
+      `SELECT id FROM drawings WHERE id = {id:String} AND userId = {userId:String} LIMIT 1`,
+      { id, userId: userId || '' }
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Çizim bulunamadı veya bu çizimi silme yetkiniz yok.' });
+    }
+
+    await execute(
+      `ALTER TABLE drawings DELETE WHERE id = {id:String} AND userId = {userId:String}`,
+      { id, userId: userId || '' }
+    );
+
+    return res.json({ message: 'Çizim silindi.' });
+  } catch (err) {
+    console.error('❌ Drawing delete error:', err);
+    return res.status(500).json({ error: 'Çizim silinemedi.' });
   }
 });
 

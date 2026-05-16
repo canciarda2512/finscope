@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import APIClient from '../services/APIClient';
 import {
-  MousePointer2, Minus, PencilLine, Brain, AlertTriangle, TrendingUp
+  MousePointer2, Minus, PencilLine, Brain, AlertTriangle, TrendingUp, X,
 } from 'lucide-react';
 import ChartView from '../components/ChartView';
 import AlertPanel from '../components/AlertPanel';
@@ -35,6 +35,12 @@ export default function ChartPage() {
     AVAILABLE_SYMBOLS.includes(initialSymbol) ? initialSymbol : 'BTCUSDT'
   );
 
+  // React to ?symbol= param changes (e.g. from navbar search)
+  useEffect(() => {
+    const s = searchParams.get('symbol')?.toUpperCase();
+    if (s && AVAILABLE_SYMBOLS.includes(s)) setSymbol(s);
+  }, [searchParams]);
+
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [aiError, setAiError] = useState(null);
@@ -44,7 +50,55 @@ export default function ChartPage() {
   const [anomalyError, setAnomalyError] = useState(null);
   const [anomalyActive, setAnomalyActive] = useState(false);
 
+  const [drawings, setDrawings] = useState([]);
+
   const socketRef = useRef(null);
+
+  const fetchDrawings = useCallback(async () => {
+    try {
+      const res = await APIClient.get('/chart/drawings', { params: { symbol, timeframe } });
+      const fetched = res.data?.drawings || [];
+      // Preserve unsaved local drawings while replacing DB entries
+      setDrawings(prev => [...fetched, ...prev.filter(d => d.temp)]);
+    } catch (err) {
+      console.error('Drawings fetch error:', err);
+    }
+  }, [symbol, timeframe]);
+
+  // Clear drawings on symbol/timeframe change, then fetch
+  useEffect(() => {
+    setDrawings([]);
+    fetchDrawings();
+  }, [fetchDrawings]);
+
+  const handleDrawingCreated = useCallback(async (type, coordinates) => {
+    const tempId = `temp-${Date.now()}`;
+    setDrawings(prev => [...prev, { id: tempId, type, coordinates, temp: true }]);
+    try {
+      const res = await APIClient.post('/chart/drawings', { symbol, timeframe, type, coordinates });
+      setDrawings(prev => prev.map(d => d.id === tempId ? { ...d, id: res.data.id, temp: false } : d));
+    } catch (err) {
+      // Keep drawing visible as local-only; it will disappear on symbol/timeframe change
+      console.warn('Drawing not saved (local only):', err?.response?.status ?? err.message);
+    }
+  }, [symbol, timeframe]);
+
+  const handleDrawingDelete = useCallback(async (id) => {
+    setDrawings(prev => prev.filter(d => d.id !== id));
+    if (id.startsWith('temp-')) return; // local-only, no DB record
+    try {
+      await APIClient.delete(`/chart/drawings/${id}`);
+    } catch (err) {
+      console.error('Drawing delete error:', err);
+      fetchDrawings();
+    }
+  }, [fetchDrawings]);
+
+  const handleClearAllDrawings = useCallback(async () => {
+    const saved = drawings.filter(d => !d.temp);
+    setDrawings([]);
+    await Promise.allSettled(saved.map(d => APIClient.delete(`/chart/drawings/${d.id}`)));
+  }, [drawings]);
 
   useEffect(() => {
     const querySymbol = searchParams.get('symbol')?.toUpperCase();
@@ -341,6 +395,54 @@ export default function ChartPage() {
         </div>
       )}
 
+      {drawings.length > 0 && (
+        <div className="mb-3 p-2 bg-[#0f172a] border border-slate-800 rounded-xl">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Drawings</span>
+            <button
+              onClick={handleClearAllDrawings}
+              className="text-[9px] text-slate-600 hover:text-red-400 transition-colors uppercase tracking-widest"
+            >
+              Clear all
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            {drawings.map((d) => {
+              const coords = typeof d.coordinates === 'string'
+                ? (() => { try { return JSON.parse(d.coordinates); } catch { return {}; } })()
+                : d.coordinates;
+              const label = d.type === 'hline'
+                ? `Horizontal  $${Number(coords?.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+                : 'Trendline';
+              return (
+                <div key={d.id}
+                  className={`flex items-center justify-between gap-3 text-[11px] px-3 py-1.5 rounded-lg border font-mono
+                    ${d.temp
+                      ? 'border-slate-700 bg-slate-800/50 text-slate-500 animate-pulse'
+                      : d.type === 'hline'
+                        ? 'border-yellow-700/50 bg-yellow-950/30 text-yellow-300'
+                        : 'border-sky-700/50 bg-sky-950/30 text-sky-300'
+                    }`}>
+                  <div className="flex items-center gap-2">
+                    {d.type === 'hline' ? <Minus size={12} /> : <PencilLine size={12} />}
+                    <span>{label}</span>
+                    {d.temp && <span className="text-[9px] text-slate-600 font-sans">saving...</span>}
+                  </div>
+                  <button
+                    onClick={() => handleDrawingDelete(d.id)}
+                    title="Delete drawing"
+                    className="flex items-center gap-1 text-slate-500 hover:text-red-400 transition-colors px-1.5 py-0.5 rounded hover:bg-red-950/40"
+                  >
+                    <X size={11} />
+                    <span className="text-[9px] font-sans">Delete</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-4">
         <div className="flex-1 min-w-0">
           <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-2">
@@ -353,7 +455,9 @@ export default function ChartPage() {
               aiPrediction={aiResult}
               anomalies={anomalyActive ? anomalies : []}
               indicators={activeIndicators}
+              savedDrawings={drawings}
               onPriceSelect={price => setSelectedOrderPrice(price?.toFixed(2) || '')}
+              onDrawingCreated={handleDrawingCreated}
             />
           </div>
           <div className="mt-2 flex items-center gap-6 text-[11px] text-slate-600">

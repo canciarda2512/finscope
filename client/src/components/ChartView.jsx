@@ -24,6 +24,7 @@ export default function ChartView({
   indicators = [],
   height = 500,
   onPriceSelect,
+  onDrawingCreated,
 }) {
   const containerRef = useRef(null);
   const chartRef = useRef(null);
@@ -32,6 +33,7 @@ export default function ChartView({
   const trendlinePointsRef = useRef([]);
   const drawingSeriesRef = useRef([]);
   const savedDrawingSeriesRef = useRef([]);
+  const onDrawingCreatedRef = useRef(onDrawingCreated);
   const aiSeriesRef = useRef(null);
   const anomalySeriesRef = useRef(null);
   const indicatorSeriesRef = useRef([]);
@@ -41,6 +43,8 @@ export default function ChartView({
   const macdContainerRef = useRef(null);
   const rsiChartRef = useRef(null);
   const macdChartRef = useRef(null);
+
+  useEffect(() => { onDrawingCreatedRef.current = onDrawingCreated; }, [onDrawingCreated]);
 
   useEffect(() => {
     activeToolRef.current = activeTool;
@@ -124,6 +128,13 @@ export default function ChartView({
   // ── Drawing helpers ──
   const drawHorizontalLine = useCallback((price) => {
     if (!chartRef.current) return;
+
+    if (onDrawingCreatedRef.current) {
+      onDrawingCreatedRef.current('hline', { price });
+      return;
+    }
+
+    // local-only fallback (when no save callback provided)
     const ts = chartRef.current.timeScale();
     const range = ts.getVisibleRange();
     if (!range) return;
@@ -146,6 +157,16 @@ export default function ChartView({
     if (!chartRef.current) return;
     const [from, to] = p1.time <= p2.time ? [p1, p2] : [p2, p1];
     if (from.time === to.time) return;
+
+    if (onDrawingCreatedRef.current) {
+      onDrawingCreatedRef.current('trendline', [
+        { time: from.time, price: from.price },
+        { time: to.time, price: to.price },
+      ]);
+      return;
+    }
+
+    // local-only fallback
     const s = chartRef.current.addLineSeries({
       color: '#38bdf8',
       lineWidth: 2,

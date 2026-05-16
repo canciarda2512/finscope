@@ -4,7 +4,16 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>FinScope</title>
+    <!-- Apply theme before React mounts to prevent flash -->
+    <script>
+      try {
+        const t = localStorage.getItem('finscope-theme');
+        if (!t || t === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
