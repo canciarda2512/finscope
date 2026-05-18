@@ -1,1 +1,87 @@
 @import "tailwindcss";
+
+/* ── Dark Theme (default) ── */
+:root[data-theme="dark"] {
+  --bg-primary: #08090a;
+  --bg-secondary: #111215;
+  --bg-tertiary: #1a1b20;
+  --bg-input: #1e1f25;
+  --bg-hover: #25262d;
+  --border-primary: #2a2b33;
+  --border-secondary: #35363f;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-dim: #475569;
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-muted: rgba(16, 185, 129, 0.12);
+  --accent-ring: rgba(16, 185, 129, 0.3);
+  --accent-text: #34d399;
+  --green: #22c55e;
+  --green-muted: rgba(34, 197, 94, 0.1);
+  --red: #ef4444;
+  --red-muted: rgba(239, 68, 68, 0.1);
+  --chart-bg: #111215;
+  --chart-grid: #1e1f25;
+  --chart-border: #2a2b33;
+}
+
+/* ── Light Theme ── */
+:root[data-theme="light"] {
+  --bg-primary: #f9fafb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f3f4f6;
+  --bg-input: #f3f4f6;
+  --bg-hover: #e5e7eb;
+  --border-primary: #d1d5db;
+  --border-secondary: #c4c8cf;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+  --text-dim: #9ca3af;
+  --accent: #059669;
+  --accent-hover: #047857;
+  --accent-muted: rgba(5, 150, 105, 0.1);
+  --accent-ring: rgba(5, 150, 105, 0.25);
+  --accent-text: #047857;
+  --green: #16a34a;
+  --green-muted: rgba(22, 163, 74, 0.08);
+  --red: #dc2626;
+  --red-muted: rgba(220, 38, 38, 0.08);
+  --chart-bg: #ffffff;
+  --chart-grid: #e5e7eb;
+  --chart-border: #d1d5db;
+}
+
+/* Default to dark */
+:root {
+  --bg-primary: #08090a;
+  --bg-secondary: #111215;
+  --bg-tertiary: #1a1b20;
+  --bg-input: #1e1f25;
+  --bg-hover: #25262d;
+  --border-primary: #2a2b33;
+  --border-secondary: #35363f;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-dim: #475569;
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-muted: rgba(16, 185, 129, 0.12);
+  --accent-ring: rgba(16, 185, 129, 0.3);
+  --accent-text: #34d399;
+  --green: #22c55e;
+  --green-muted: rgba(34, 197, 94, 0.1);
+  --red: #ef4444;
+  --red-muted: rgba(239, 68, 68, 0.1);
+  --chart-bg: #111215;
+  --chart-grid: #1e1f25;
+  --chart-border: #2a2b33;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}

@@ -10,7 +10,7 @@ const SYMBOLS = [
   'ATOMUSDT', 'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT',
   'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
 ];
-const TIMEFRAMES = ['1m', '5m', '1D', '1W', '1M'];
+const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1D', '1W', '1M'];
 const INDICATORS = ['SMA', 'EMA', 'RSI', 'MACD', 'BB'];
 const LAYOUTS = [
   { id: 1, label: 'Single Chart' },
@@ -59,29 +59,29 @@ export default function MultiChartPage() {
       : 'grid-cols-1 xl:grid-cols-2';
 
   return (
-    <div className="min-h-screen bg-[#020617] p-4 text-slate-300">
+    <div className="min-h-screen p-4" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold text-white">
-            <CandlestickChart size={20} className="text-blue-500" />
+          <h1 className="flex items-center gap-2 text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            <CandlestickChart size={20} style={{ color: 'var(--accent)' }} />
             Multi-Chart
           </h1>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
             Compare independent symbols and timeframes from one shared live feed.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex rounded-xl border border-slate-800 bg-[#0f172a] p-1">
+          <div className="flex rounded-xl p-1" style={{ border: '1px solid var(--border-primary)', backgroundColor: 'var(--bg-secondary)' }}>
             {LAYOUTS.map(option => (
               <button
                 key={option.id}
                 onClick={() => setLayout(option.id)}
-                className={`rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition ${
-                  layout === option.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
-                }`}
+                className="rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wide transition"
+                style={{
+                  backgroundColor: layout === option.id ? 'var(--accent)' : 'transparent',
+                  color: layout === option.id ? '#fff' : 'var(--text-muted)',
+                }}
               >
                 {option.label}
               </button>
@@ -212,19 +212,20 @@ const MultiChartPanel = memo(function MultiChartPanel({
   };
 
   return (
-    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-[#0f172a]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/30 px-3 py-2">
+    <section className="min-w-0 overflow-hidden rounded-xl" style={{ border: '1px solid var(--border-primary)', backgroundColor: 'var(--bg-secondary)' }}>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--border-primary)', backgroundColor: 'var(--bg-tertiary)' }}>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{title}</span>
-          {loading && <span className="text-[10px] text-slate-600">Loading...</span>}
-          {error && <span className="text-[10px] text-red-400">{error}</span>}
+          <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>{title}</span>
+          {loading && <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Loading...</span>}
+          {error && <span className="text-[10px]" style={{ color: 'var(--red)' }}>{error}</span>}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={symbol}
             onChange={e => setSymbol(e.target.value)}
-            className="rounded border border-slate-700 bg-[#020617] px-2 py-1 text-[11px] font-bold text-white outline-none focus:border-blue-500"
+            className="rounded px-2 py-1 text-[11px] font-bold outline-none"
+            style={{ border: '1px solid var(--border-secondary)', backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)' }}
           >
             {SYMBOLS.map(item => (
               <option key={item} value={item}>{formatSymbol(item)}</option>
@@ -234,7 +235,8 @@ const MultiChartPanel = memo(function MultiChartPanel({
           <select
             value={timeframe}
             onChange={e => setTimeframe(e.target.value)}
-            className="rounded border border-slate-700 bg-[#020617] px-2 py-1 text-[11px] font-bold text-white outline-none focus:border-blue-500"
+            className="rounded px-2 py-1 text-[11px] font-bold outline-none"
+            style={{ border: '1px solid var(--border-secondary)', backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)' }}
           >
             {TIMEFRAMES.map(item => (
               <option key={item} value={item}>{item}</option>
@@ -243,7 +245,7 @@ const MultiChartPanel = memo(function MultiChartPanel({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--border-primary)' }}>
         <div className="flex items-center gap-1">
           {[
             { id: 'cursor', icon: <MousePointer2 size={14} />, label: 'Cursor' },
@@ -254,11 +256,11 @@ const MultiChartPanel = memo(function MultiChartPanel({
               key={tool.id}
               onClick={() => setActiveTool(tool.id)}
               title={tool.label}
-              className={`rounded p-1.5 transition ${
-                activeTool === tool.id
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
-              }`}
+              className="rounded p-1.5 transition"
+              style={{
+                backgroundColor: activeTool === tool.id ? 'var(--accent-muted)' : 'transparent',
+                color: activeTool === tool.id ? 'var(--accent-text)' : 'var(--text-muted)',
+              }}
             >
               {tool.icon}
             </button>
@@ -270,11 +272,12 @@ const MultiChartPanel = memo(function MultiChartPanel({
             <button
               key={indicator}
               onClick={() => toggleIndicator(indicator)}
-              className={`rounded border px-2 py-1 text-[9px] font-bold uppercase transition ${
-                selectedIndicators.has(indicator)
-                  ? 'border-blue-500 bg-blue-500/10 text-blue-300'
-                  : 'border-slate-800 text-slate-600 hover:border-slate-600 hover:text-slate-300'
-              }`}
+              className="rounded px-2 py-1 text-[9px] font-bold uppercase transition"
+              style={{
+                border: selectedIndicators.has(indicator) ? '1px solid var(--accent)' : '1px solid var(--border-primary)',
+                backgroundColor: selectedIndicators.has(indicator) ? 'var(--accent-muted)' : 'transparent',
+                color: selectedIndicators.has(indicator) ? 'var(--accent-text)' : 'var(--text-dim)',
+              }}
             >
               {indicator}
             </button>
@@ -295,7 +298,7 @@ const MultiChartPanel = memo(function MultiChartPanel({
         />
       </div>
 
-      <div className="flex items-center justify-between border-t border-slate-800 px-3 py-2 text-[10px] text-slate-600">
+      <div className="flex items-center justify-between px-3 py-2 text-[10px]" style={{ borderTop: '1px solid var(--border-primary)', color: 'var(--text-dim)' }}>
         <span>{formatSymbol(symbol)} / {timeframe}</span>
         <span>{drawings.length} saved drawings</span>
       </div>

@@ -24,7 +24,7 @@ function AlertRow({ alert, deleting, onDelete }) {
   const triggeredAt = formatDate(alert.missedAt || alert.triggeredAt);
 
   return (
-    <div className="flex items-center justify-between text-[10px] py-1 border-b border-slate-800 last:border-0">
+    <div className="flex items-center justify-between text-[10px] py-1 border-b border-current/10 last:border-0">
       <div>
         <div className="font-bold text-white">
           {alert.symbol} {alert.condition} ${formatPrice(alert.targetPrice)}
@@ -46,7 +46,7 @@ function AlertRow({ alert, deleting, onDelete }) {
   );
 }
 
-export default function AlertPanel({ symbol, currentPrice }) {
+export default function AlertPanel({ symbol, currentPrice, pendingPrice, onPendingPriceConsumed }) {
   const { isAuthenticated } = useAuth();
   const [alerts, setAlerts] = useState([]);
   const [condition, setCondition] = useState('>');
@@ -55,6 +55,15 @@ export default function AlertPanel({ symbol, currentPrice }) {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState('');
+
+  // Pre-fill from right-click context menu
+  useEffect(() => {
+    if (pendingPrice && Number.isFinite(pendingPrice)) {
+      setTargetPrice(pendingPrice.toFixed(2));
+      setCondition(currentPrice && pendingPrice > currentPrice ? '>' : '<');
+      onPendingPriceConsumed?.();
+    }
+  }, [pendingPrice]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -138,7 +147,7 @@ export default function AlertPanel({ symbol, currentPrice }) {
   const canSubmit = isAuthenticated && !saving && Number(targetPrice) > 0;
 
   return (
-    <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-3">
+    <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
       <div className="flex items-center justify-between mb-2">
         <div className="text-[10px] font-bold text-slate-500 uppercase">
           Price Alerts
@@ -207,7 +216,7 @@ export default function AlertPanel({ symbol, currentPrice }) {
           value={condition}
           onChange={e => setCondition(e.target.value)}
           disabled={!isAuthenticated || saving}
-          className="bg-slate-800 border border-slate-700 rounded px-1 py-1 text-[10px] text-white disabled:text-slate-500"
+          className="border rounded px-1 py-1 text-[10px] text-white disabled:text-slate-500"
         >
           <option value=">">&gt;</option>
           <option value="<">&lt;</option>
@@ -219,7 +228,7 @@ export default function AlertPanel({ symbol, currentPrice }) {
           value={targetPrice}
           onChange={e => setTargetPrice(e.target.value)}
           disabled={!isAuthenticated || saving}
-          className="flex-1 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[10px] text-white outline-none disabled:text-slate-500"
+          className="flex-1 border rounded px-2 py-1 text-[10px] text-white outline-none disabled:text-slate-500"
         />
 
         <button

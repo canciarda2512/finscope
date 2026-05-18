@@ -63,10 +63,46 @@ async function getUserSymbols(userId) {
   return DEFAULT_SYMBOLS;
 }
 
+async function getSparklineData(symbols) {
+  if (!symbols.length) return new Map();
+
+  try {
+    const symbolList = symbols.map(s => `'${s}'`).join(',');
+    const { rows } = await query(
+      `SELECT symbol,
+              groupArray(close) AS closes
+       FROM (
+         SELECT symbol, close
+         FROM market_data
+         WHERE symbol IN (${symbolList})
+           AND timestamp >= now() - INTERVAL 7 DAY
+         ORDER BY timestamp ASC
+       )
+       GROUP BY symbol`
+    );
+
+    const result = new Map();
+    for (const row of rows) {
+      const closes = (typeof row.closes === 'string' ? JSON.parse(row.closes) : row.closes) || [];
+      // Downsample to ~30 points for a compact sparkline
+      const step = Math.max(1, Math.floor(closes.length / 30));
+      const sampled = closes.filter((_, i) => i % step === 0).map(Number);
+      if (sampled.length >= 2) result.set(row.symbol, sampled);
+    }
+    return result;
+  } catch (err) {
+    console.error('Sparkline data error:', err.message);
+    return new Map();
+  }
+}
+
 async function getMarketSnapshot(symbols) {
   if (!symbols.length) return [];
 
-  const tickerMap = await getCachedTickers();
+  const [tickerMap, sparklineMap] = await Promise.all([
+    getCachedTickers(),
+    getSparklineData(symbols),
+  ]);
 
   return symbols.map(symbol => {
     const ticker = tickerMap.get(symbol);
@@ -76,6 +112,7 @@ async function getMarketSnapshot(symbols) {
       price24hAgo: 0,
       change24h: ticker?.change24h || 0,
       volume24h: ticker?.volume24h || 0,
+      sparkline: sparklineMap.get(symbol) || null,
       latestAt: ticker ? new Date().toISOString() : null,
     };
   });

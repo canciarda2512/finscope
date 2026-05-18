@@ -86,43 +86,44 @@ function AddAssetModal({ watchedSymbols, onAdd, onClose }) {
       }}
     >
       <div
-        className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md flex flex-col shadow-2xl"
-        style={{ maxHeight: '80vh' }}
+        className="rounded-2xl w-full max-w-md flex flex-col shadow-2xl"
+        style={{ maxHeight: '80vh', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border-primary)' }}>
           <div>
-            <h2 className="text-white font-bold text-base">Add Asset</h2>
-            <p className="text-slate-500 text-xs mt-0.5">Binance USDT pairs sorted by volume</p>
+            <h2 className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>Add Asset</h2>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Binance USDT pairs sorted by volume</p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition"
+            className="p-1.5 rounded-lg transition" style={{ color: 'var(--text-muted)' }}
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="px-4 py-3 border-b border-slate-800">
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border-primary)' }}>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={15} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={15} style={{ color: 'var(--text-muted)' }} />
             <input
               ref={searchRef}
               type="text"
               placeholder="Search symbol or name..."
               value={modalSearch}
               onChange={event => setModalSearch(event.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2 pl-9 pr-4 text-sm outline-none focus:border-blue-500 text-white transition placeholder-slate-600"
+              className="w-full rounded-xl py-2 pl-9 pr-4 text-sm outline-none transition"
+              style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
             />
           </div>
         </div>
 
         <div className="overflow-y-auto flex-1">
           {modalLoading ? (
-            <div className="text-center text-slate-500 py-12 text-sm animate-pulse">
+            <div className="text-center py-12 text-sm animate-pulse" style={{ color: 'var(--text-muted)' }}>
               Loading Binance pairs...
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center text-slate-600 py-12 text-sm">
+            <div className="text-center py-12 text-sm" style={{ color: 'var(--text-dim)' }}>
               No results found
             </div>
           ) : filtered.map(item => {
@@ -136,30 +137,32 @@ function AddAssetModal({ watchedSymbols, onAdd, onClose }) {
                 key={item.symbol}
                 onClick={() => handleAdd(item.symbol)}
                 disabled={!!addingSymbol}
-                className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-800/60 transition border-b border-slate-800/40 last:border-0 disabled:opacity-60 text-left group"
+                className="w-full flex items-center justify-between px-5 py-3.5 transition last:border-0 disabled:opacity-60 text-left group"
+                style={{ borderBottom: '1px solid var(--border-primary)' }}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
-                    <span className="text-[9px] font-bold text-slate-400">{base.slice(0, 3)}</span>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-secondary)' }}>
+                    <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>{base.slice(0, 3)}</span>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-white font-bold text-sm leading-none">{base}</div>
-                    {name && <div className="text-slate-500 text-[11px] mt-0.5">{name}</div>}
+                    <div className="font-bold text-sm leading-none" style={{ color: 'var(--text-primary)' }}>{base}</div>
+                    {name && <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{name}</div>}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right">
-                    <div className="text-white font-mono text-xs">${money(item.price)}</div>
+                    <div className="font-mono text-xs" style={{ color: 'var(--text-primary)' }}>${money(item.price)}</div>
                     <div className={`text-[10px] font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
                       {pct(item.change24h)}
                     </div>
                   </div>
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition flex-shrink-0
-                    ${isAdding
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-800 border border-slate-700 text-slate-500 group-hover:border-blue-500 group-hover:text-blue-400'
-                    }`}
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center transition flex-shrink-0"
+                    style={{
+                      backgroundColor: isAdding ? 'var(--accent)' : 'var(--bg-tertiary)',
+                      border: isAdding ? 'none' : '1px solid var(--border-secondary)',
+                      color: isAdding ? '#fff' : 'var(--text-muted)',
+                    }}
                   >
                     {isAdding ? <span className="text-[9px] animate-spin">...</span> : <Plus size={13} />}
                   </div>
@@ -169,11 +172,11 @@ function AddAssetModal({ watchedSymbols, onAdd, onClose }) {
           })}
         </div>
 
-        <div className="px-5 py-2.5 border-t border-slate-800 flex items-center justify-between">
-          <span className="text-[10px] text-slate-600">
+        <div className="px-5 py-2.5 flex items-center justify-between" style={{ borderTop: '1px solid var(--border-primary)' }}>
+          <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>
             {modalLoading ? '...' : `${filtered.length} available`}
           </span>
-          <span className="text-[10px] text-slate-600">Click to add - ESC to close</span>
+          <span className="text-[10px]" style={{ color: 'var(--text-dim)' }}>Click to add - ESC to close</span>
         </div>
       </div>
     </div>
@@ -278,7 +281,7 @@ export default function WatchlistPage() {
   };
 
   return (
-    <div className="bg-slate-950 min-h-screen p-6 text-slate-200">
+    <div className="min-h-screen p-6" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
       {showModal && (
         <AddAssetModal
           watchedSymbols={watchedSymbols}
@@ -290,8 +293,8 @@ export default function WatchlistPage() {
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-white tracking-tight">Watchlist</h1>
-            <p className="text-slate-500 text-sm mt-1">
+            <h1 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>Watchlist</h1>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
               Scan live prices, 24h change, and volume for the assets you follow.
             </p>
           </div>
@@ -304,14 +307,16 @@ export default function WatchlistPage() {
                 placeholder="Search assets..."
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl py-2.5 pl-10 pr-4 outline-none focus:border-blue-500 transition text-sm"
+                className="w-full rounded-xl py-2.5 pl-10 pr-4 outline-none transition text-sm"
+                style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)' }}
               />
             </div>
 
             <div className="flex gap-2">
               <button
                 onClick={() => setShowModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold transition"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-bold transition"
+                style={{ backgroundColor: 'var(--accent)' }}
                 title="Add asset"
               >
                 <Plus size={16} />
@@ -319,7 +324,8 @@ export default function WatchlistPage() {
               </button>
               <button
                 onClick={() => loadWatchlist(true)}
-                className="inline-flex items-center justify-center rounded-xl border border-slate-800 bg-slate-900 hover:border-blue-500 px-3 text-slate-300 transition"
+                className="inline-flex items-center justify-center rounded-xl px-3 transition"
+                style={{ border: '1px solid var(--border-primary)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}
                 title="Refresh snapshot"
               >
                 <RefreshCw size={18} />

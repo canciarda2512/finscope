@@ -97,11 +97,11 @@ export default function PortfolioPage() {
   const positions = portfolio?.positions || [];
 
   return (
-    <div className="bg-[#020617] min-h-screen p-6 text-slate-300 pb-24">
+    <div className="min-h-screen p-6 pb-24" style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white tracking-tight">Portfolio Analysis</h1>
-          <p className="text-slate-500 text-sm mt-1 italic">
+          <h1 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>Portfolio Analysis</h1>
+          <p className="text-sm mt-1 italic" style={{ color: 'var(--text-muted)' }}>
             Demo account start balance: {money(portfolio?.startBalance ?? 100000)}
           </p>
         </div>
@@ -125,20 +125,21 @@ export default function PortfolioPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2 bg-[#0f172a] border border-slate-800 rounded-2xl p-6 shadow-xl min-h-[350px]">
-            <h2 className="text-white font-bold mb-6 flex items-center gap-2 text-sm uppercase tracking-wider">
+          <div className="lg:col-span-2 rounded-2xl p-6 shadow-xl min-h-[350px]" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+            <h2 className="font-bold mb-6 flex items-center gap-2 text-sm uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>
               <TrendingUp size={16} /> Equity Curve
             </h2>
-            <div className="relative h-64 bg-[#020617]/50 rounded-xl border border-slate-800 overflow-hidden">
+            <div className="relative h-64 rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
               {chartPoints.length < 2 ? (
-                <div className="h-full flex items-center justify-center text-slate-600 text-sm font-mono">
+                <div className="h-full flex items-center justify-center text-sm font-mono" style={{ color: 'var(--text-dim)' }}>
                   Place a demo trade to start the equity curve.
                 </div>
               ) : (
                 chartPoints.map((point, index) => (
                   <div
                     key={`${point.date}-${index}`}
-                    className="absolute h-2 w-2 -ml-1 -mt-1 rounded-full bg-blue-400 shadow-lg shadow-blue-500/30"
+                    className="absolute h-2 w-2 -ml-1 -mt-1 rounded-full shadow-lg"
+                    style={{ backgroundColor: 'var(--accent)', boxShadow: '0 0 8px var(--accent-ring)' }}
                     style={{ left: `${point.left}%`, top: `${point.top}%` }}
                     title={`${formatDate(point.date)} - ${money(point.value)}`}
                   />
@@ -147,30 +148,30 @@ export default function PortfolioPage() {
             </div>
           </div>
 
-          <div className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-5 border-b border-slate-800 bg-slate-900/30">
-              <h2 className="text-white font-bold text-xs uppercase tracking-widest">Open Positions</h2>
+          <div className="rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+            <div className="p-5" style={{ borderBottom: '1px solid var(--border-primary)', backgroundColor: 'var(--bg-tertiary)' }}>
+              <h2 className="font-bold text-xs uppercase tracking-widest" style={{ color: 'var(--text-primary)' }}>Open Positions</h2>
             </div>
             <table className="w-full text-left">
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody>
                 {positions.length === 0 && (
                   <tr>
-                    <td className="px-5 py-6 text-xs text-slate-600">No open positions yet.</td>
+                    <td className="px-5 py-6 text-xs" style={{ color: 'var(--text-dim)' }}>No open positions yet.</td>
                   </tr>
                 )}
                 {positions.map((pos) => {
                   const up = Number(pos.pnl || 0) >= 0;
                   return (
-                    <tr key={pos.symbol} className="hover:bg-slate-800/30 transition group">
+                    <tr key={pos.symbol} className="transition group" style={{ borderBottom: '1px solid var(--border-primary)' }}>
                       <td className="px-5 py-4">
-                        <p className="font-bold text-white text-sm tracking-tight">{pos.symbol.replace('USDT', '/USDT')}</p>
-                        <p className="text-[10px] text-slate-500 font-mono italic">{number(pos.quantity)} units</p>
-                        <p className="text-[10px] text-slate-600 font-mono">Avg {money(pos.entryPrice)}</p>
+                        <p className="font-bold text-sm tracking-tight" style={{ color: 'var(--text-primary)' }}>{pos.symbol.replace('USDT', '/USDT')}</p>
+                        <p className="text-[10px] font-mono italic" style={{ color: 'var(--text-muted)' }}>{number(pos.quantity)} units</p>
+                        <p className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Avg {money(pos.entryPrice)}</p>
                       </td>
                       <td className="px-5 py-4 text-right">
                         <p className={`text-sm font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{money(pos.pnl)}</p>
-                        <p className="text-[10px] text-slate-500 font-mono">{percent(pos.pnlPercent)}</p>
-                        <p className="text-[10px] text-slate-600 font-mono">Now {money(pos.currentPrice)}</p>
+                        <p className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{percent(pos.pnlPercent)}</p>
+                        <p className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Now {money(pos.currentPrice)}</p>
                       </td>
                     </tr>
                   );
@@ -180,26 +181,27 @@ export default function PortfolioPage() {
           </div>
         </div>
 
-        <div className="bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-          <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/30">
-            <h2 className="text-white font-bold text-sm flex items-center gap-2 underline decoration-blue-500 decoration-2 underline-offset-8">
-              <Clock size={16} className="text-blue-500" /> Trade History
+        <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+          <div className="p-5 flex justify-between items-center" style={{ borderBottom: '1px solid var(--border-primary)', backgroundColor: 'var(--bg-tertiary)' }}>
+            <h2 className="font-bold text-sm flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Clock size={16} style={{ color: 'var(--accent)' }} /> Trade History
             </h2>
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" size={14} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: 'var(--text-dim)' }} />
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search history..."
-                className="bg-[#020617] border border-slate-700 rounded-lg py-1 pl-9 pr-4 text-xs focus:outline-none focus:border-blue-500 transition"
+                className="rounded-lg py-1 pl-9 pr-4 text-xs outline-none transition"
+                style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
               />
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
-                <tr className="bg-[#020617]/50 text-[10px] uppercase font-bold tracking-[0.2em] text-slate-500 border-b border-slate-800">
+                <tr className="text-[10px] uppercase font-bold tracking-[0.2em]" style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-primary)', backgroundColor: 'var(--bg-tertiary)' }}>
                   <th className="px-6 py-4">#</th>
                   <th className="px-6 py-4">Date</th>
                   <th className="px-6 py-4">Symbol</th>
@@ -210,10 +212,10 @@ export default function PortfolioPage() {
                   <th className="px-6 py-4 text-right">P&L</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody>
                 {filteredTrades.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-xs text-slate-600">
+                    <td colSpan={8} className="px-6 py-8 text-center text-xs" style={{ color: 'var(--text-dim)' }}>
                       No trade history yet.
                     </td>
                   </tr>
@@ -224,20 +226,20 @@ export default function PortfolioPage() {
                   const hasRealizedPnL = realizedPnL !== null && realizedPnL !== undefined;
                   const realizedUp = Number(realizedPnL || 0) >= 0;
                   return (
-                    <tr key={trade.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="px-6 py-4 text-xs text-slate-600 font-mono">{index + 1}</td>
-                      <td className="px-6 py-4 text-xs font-mono text-slate-400">{formatDate(trade.timestamp)}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-white">{trade.symbol?.replace('USDT', '/USDT')}</td>
+                    <tr key={trade.id} className="transition-colors" style={{ borderBottom: '1px solid var(--border-primary)' }}>
+                      <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-dim)' }}>{index + 1}</td>
+                      <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{formatDate(trade.timestamp)}</td>
+                      <td className="px-6 py-4 text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{trade.symbol?.replace('USDT', '/USDT')}</td>
                       <td className="px-6 py-4">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${side === 'BUY' ? 'bg-blue-500/10 text-blue-400' : 'bg-orange-500/10 text-orange-400'}`}>
                           {side}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-xs font-mono">{number(trade.quantity)}</td>
-                      <td className="px-6 py-4 text-xs font-mono text-slate-300">{money(trade.price)}</td>
-                      <td className="px-6 py-4 text-xs font-mono text-slate-300">{money(trade.total)}</td>
+                      <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{number(trade.quantity)}</td>
+                      <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{money(trade.price)}</td>
+                      <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{money(trade.total)}</td>
                       <td className={`px-6 py-4 text-right text-xs font-bold ${
-                        !hasRealizedPnL ? 'text-slate-500' : realizedUp ? 'text-emerald-400' : 'text-rose-400'
+                        !hasRealizedPnL ? '' : realizedUp ? 'text-emerald-400' : 'text-rose-400'
                       }`}>
                         {hasRealizedPnL ? money(realizedPnL) : '-'}
                       </td>
@@ -262,12 +264,12 @@ function MetricCard({ icon: Icon, label, value, detail, tone }) {
   }[tone] || 'text-white';
 
   return (
-    <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-800">
-      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">
+    <div className="p-5 rounded-2xl" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+      <p className="text-[10px] font-bold uppercase tracking-widest mb-1 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
         <Icon size={12} /> {label}
       </p>
       <div className={`text-2xl font-bold mb-2 ${toneClass}`}>{value}</div>
-      <div className="text-slate-500 text-[11px] font-medium italic">{detail}</div>
+      <div className="text-[11px] font-medium italic" style={{ color: 'var(--text-muted)' }}>{detail}</div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { createChart } from 'lightweight-charts';
 
 /**
@@ -12,6 +12,7 @@ import { createChart } from 'lightweight-charts';
  *   aiPrediction   — { direction, confidence, predictedValues } | null
  *   anomalies      — [{ time, type, severity }]
  *   onPriceSelect  — (price: number) => void
+ *   onSetAlert     — (price: number) => void  (right-click → set alert)
  */
 export default function ChartView({
   candles,
@@ -22,9 +23,12 @@ export default function ChartView({
   anomalies = [],
   savedDrawings = [],
   indicators = [],
-  height = 500,
+  height = '100%',
   onPriceSelect,
+  onSetAlert,
+  theme = 'dark',
 }) {
+  const [contextMenu, setContextMenu] = useState(null);
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
@@ -54,20 +58,23 @@ export default function ChartView({
 
     container.innerHTML = '';
 
+    const computedHeight = height === '100%' ? container.clientHeight || 500 : height;
+    const isDark = theme === 'dark';
+
     const chart = createChart(container, {
       width: container.clientWidth,
-      height,
+      height: computedHeight,
       layout: {
-        background: { color: '#0f172a' },
-        textColor: '#94a3b8',
+        background: { color: isDark ? '#0d1117' : '#ffffff' },
+        textColor: isDark ? '#94a3b8' : '#64748b',
       },
       grid: {
-        vertLines: { color: '#1e293b' },
-        horzLines: { color: '#1e293b' },
+        vertLines: { color: isDark ? '#1e293b' : '#e2e8f0' },
+        horzLines: { color: isDark ? '#1e293b' : '#e2e8f0' },
       },
-      rightPriceScale: { borderColor: '#334155' },
+      rightPriceScale: { borderColor: isDark ? '#334155' : '#d1d5db' },
       timeScale: {
-        borderColor: '#334155',
+        borderColor: isDark ? '#334155' : '#d1d5db',
         timeVisible: false,
         secondsVisible: false,
       },
@@ -112,10 +119,33 @@ export default function ChartView({
       }
     });
 
-    const resize = () => chart.applyOptions({ width: container.clientWidth });
+    // Right-click context menu
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      if (!candleSeriesRef.current) return;
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const price = candleSeriesRef.current.coordinateToPrice(y);
+      if (price && Number.isFinite(price)) {
+        setContextMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, price });
+      }
+    };
+    container.addEventListener('contextmenu', handleContextMenu);
+
+    // Close context menu on any click
+    const closeMenu = () => setContextMenu(null);
+    document.addEventListener('click', closeMenu);
+
+    const resize = () => {
+      const newHeight = height === '100%' ? container.clientHeight || 500 : height;
+      chart.applyOptions({ width: container.clientWidth, height: newHeight });
+    };
     window.addEventListener('resize', resize);
 
     return () => {
+      container.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('click', closeMenu);
       window.removeEventListener('resize', resize);
       chart.remove();
     };
@@ -234,7 +264,7 @@ export default function ChartView({
   // ── Timeframe option update ──
   useEffect(() => {
     if (!chartRef.current) return;
-    const intraday = timeframe === '1m' || timeframe === '5m';
+    const intraday = ['1m', '5m', '15m', '1h', '4h'].includes(timeframe);
     chartRef.current.applyOptions({
       timeScale: { timeVisible: intraday },
     });
@@ -325,13 +355,14 @@ export default function ChartView({
       .filter(c => Number.isFinite(c.time) && Number.isFinite(c.close))
       .sort((a, b) => a.time - b.time);
 
+    const isDarkSub = theme === 'dark';
     const subChartOptions = (container) => ({
       width: container.clientWidth,
       height: 110,
-      layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
-      grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-      rightPriceScale: { borderColor: '#334155', scaleMargins: { top: 0.1, bottom: 0.1 } },
-      timeScale: { borderColor: '#334155', timeVisible: false, secondsVisible: false },
+      layout: { background: { color: isDarkSub ? '#0d1117' : '#ffffff' }, textColor: isDarkSub ? '#94a3b8' : '#64748b' },
+      grid: { vertLines: { color: isDarkSub ? '#1e293b' : '#e2e8f0' }, horzLines: { color: isDarkSub ? '#1e293b' : '#e2e8f0' } },
+      rightPriceScale: { borderColor: isDarkSub ? '#334155' : '#d1d5db', scaleMargins: { top: 0.1, bottom: 0.1 } },
+      timeScale: { borderColor: isDarkSub ? '#334155' : '#d1d5db', timeVisible: false, secondsVisible: false },
       crosshair: { mode: 1 },
       handleScroll: false,
       handleScale: false,
@@ -524,12 +555,66 @@ export default function ChartView({
     candleSeriesRef.current.setMarkers(markers);
   }, [anomalies]);
 
+  const handleContextAction = (action) => {
+    if (!contextMenu) return;
+    if (action === 'alert' && onSetAlert) {
+      onSetAlert(contextMenu.price);
+    } else if (action === 'hline') {
+      drawHorizontalLine(contextMenu.price);
+    } else if (action === 'select') {
+      onPriceSelect?.(contextMenu.price);
+    } else if (action === 'clear-drawings') {
+      drawingSeriesRef.current.forEach(s => {
+        try { chartRef.current.removeSeries(s); } catch (_) {}
+      });
+      drawingSeriesRef.current = [];
+    }
+    setContextMenu(null);
+  };
+
   return (
-    <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-2">
-      <div ref={containerRef} className="w-full" style={{ height }} />
+    <div className={`relative ${height === '100%' ? 'h-full flex flex-col' : ''}`} style={{ backgroundColor: 'var(--chart-bg)' }}>
+      <div ref={containerRef} className={`w-full ${height === '100%' ? 'flex-1 min-h-0' : ''}`} style={height !== '100%' ? { height } : undefined} />
+
+      {contextMenu && (
+        <div
+          className="absolute z-50 rounded-lg shadow-2xl py-1 text-xs min-w-[160px]"
+          style={{
+            left: contextMenu.x,
+            top: contextMenu.y,
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-primary)',
+            color: 'var(--text-primary)',
+          }}
+        >
+          <div className="px-3 py-1.5 font-mono text-[10px]" style={{ color: 'var(--text-dim)', borderBottom: '1px solid var(--border-primary)' }}>
+            ${contextMenu.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          {onSetAlert && (
+            <button onClick={() => handleContextAction('alert')}
+              className="w-full text-left px-3 py-1.5 transition" style={{ color: 'var(--text-secondary)' }}>
+              Set Price Alert
+            </button>
+          )}
+          <button onClick={() => handleContextAction('hline')}
+            className="w-full text-left px-3 py-1.5 transition" style={{ color: 'var(--text-secondary)' }}>
+            Draw Horizontal Line
+          </button>
+          <button onClick={() => handleContextAction('select')}
+            className="w-full text-left px-3 py-1.5 transition" style={{ color: 'var(--text-secondary)' }}>
+            Use as Order Price
+          </button>
+          {drawingSeriesRef.current.length > 0 && (
+            <button onClick={() => handleContextAction('clear-drawings')}
+              className="w-full text-left px-3 py-1.5 transition" style={{ color: 'var(--red)', borderTop: '1px solid var(--border-primary)' }}>
+              Clear All Drawings
+            </button>
+          )}
+        </div>
+      )}
 
       {indicators?.includes('RSI') && (
-        <div className="mt-1 border-t border-slate-700/50">
+        <div className="mt-1" style={{ borderTop: '1px solid var(--border-primary)' }}>
           <div className="flex items-center gap-2 px-1 pt-1 pb-0.5">
             <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest">RSI (14)</span>
             <span className="text-[9px] text-slate-600">— 70 overbought · 30 oversold</span>
@@ -539,7 +624,7 @@ export default function ChartView({
       )}
 
       {indicators?.includes('MACD') && (
-        <div className="mt-1 border-t border-slate-700/50">
+        <div className="mt-1" style={{ borderTop: '1px solid var(--border-primary)' }}>
           <div className="flex items-center gap-2 px-1 pt-1 pb-0.5">
             <span className="text-[9px] font-bold text-sky-400 uppercase tracking-widest">MACD (12,26,9)</span>
             <span className="text-[9px] text-slate-600">— <span className="text-sky-400">MACD</span> · <span className="text-orange-400">Signal</span></span>
@@ -556,6 +641,9 @@ function timeframeToSeconds(tf) {
   const map = {
     '1m': 60,
     '5m': 300,
+    '15m': 900,
+    '1h': 3600,
+    '4h': 14400,
     '1D': 86400,
     '1W': 604800,
     '1M': 2592000,
