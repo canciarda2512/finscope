@@ -131,6 +131,39 @@ export async function cacheSet(key, value, ttl = CACHE_DEFAULT_TTL) {
   } catch { /* ignore */ }
 }
 
+// ── OTP Store (for 2FA codes) ──
+
+const _otpFallback = new Map();
+
+export async function setOTP(userId, code) {
+  if (connected) {
+    try {
+      await redis.set(`finscope:otp:${userId}`, code, 'EX', 300);
+      return;
+    } catch { /* fall through */ }
+  }
+  _otpFallback.set(userId, { code, expires: Date.now() + 300_000 });
+}
+
+export async function getOTP(userId) {
+  if (connected) {
+    try {
+      return await redis.get(`finscope:otp:${userId}`);
+    } catch { /* fall through */ }
+  }
+  const entry = _otpFallback.get(userId);
+  if (!entry) return null;
+  if (Date.now() > entry.expires) { _otpFallback.delete(userId); return null; }
+  return entry.code;
+}
+
+export async function deleteOTP(userId) {
+  if (connected) {
+    try { await redis.del(`finscope:otp:${userId}`); } catch { /* ignore */ }
+  }
+  _otpFallback.delete(userId);
+}
+
 // ── Shutdown ──
 
 export async function shutdownRedis() {
@@ -148,5 +181,8 @@ export default {
   getLatestPriceFromCache,
   cacheGet,
   cacheSet,
+  setOTP,
+  getOTP,
+  deleteOTP,
   shutdownRedis,
 };

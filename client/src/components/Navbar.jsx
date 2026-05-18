@@ -231,11 +231,12 @@ export default function Navbar() {
 
         {isAuthenticated ? (
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md"
-              style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid var(--accent-ring)' }}>
+            <NavLink to="/profile" className="flex items-center gap-1.5 px-2.5 py-1 rounded-md transition"
+              style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid var(--accent-ring)' }}
+              title="Profile">
               <User size={12} style={{ color: 'var(--accent-text)' }} />
               <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>@{user?.username || 'user'}</span>
-            </div>
+            </NavLink>
             <button onClick={logout} className="p-1.5 rounded-md transition" style={{ color: 'var(--text-dim)' }} title="Sign out">
               <LogOut size={14} />
             </button>

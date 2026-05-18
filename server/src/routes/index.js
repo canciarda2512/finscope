@@ -20,13 +20,13 @@ router.use(rateLimiter);
 // ── Public routes ──
 router.use('/auth', authController);
 
-// ── Chart (public — guests can view) ──
+// ── Chart + Screener (public — guests can view market data) ──
 router.use('/chart', chartController);
+router.use('/screener', screenerController);
 
 // ── Protected routes (auth required) ──
 router.use('/trade', authMiddleware, tradeController);
 router.use('/portfolio', authMiddleware, portfolioController);
-router.use('/screener', authMiddleware, screenerController);
 router.use('/watchlist', authMiddleware, watchlistController);
 router.use('/alerts', authMiddleware, alertController);
 router.use('/strategy', authMiddleware, strategyController);

@@ -5,8 +5,9 @@ CREATE TABLE IF NOT EXISTS finscope.users
     email        String,
     passwordHash String,
     refreshToken String,
-    theme        String DEFAULT 'dark',
-    createdAt    DateTime64(3, 'UTC')
+    theme             String DEFAULT 'dark',
+    twoFactorEnabled  UInt8 DEFAULT 0,
+    createdAt         DateTime64(3, 'UTC')
 )
 ENGINE = ReplacingMergeTree()
 ORDER BY (id);
