@@ -38,6 +38,7 @@ export default function ChartView({
   anomalies = [],
   savedDrawings = [],
   indicators = [],
+  indicatorData = {},
   height = 500,
   onPriceSelect,
   onDrawingCreated,
@@ -55,6 +56,8 @@ export default function ChartView({
   const savedDrawingSeriesRef = useRef([]);
   const onDrawingCreatedRef = useRef(onDrawingCreated);
   const aiSeriesRef = useRef(null);
+  const aiLinSeriesRef = useRef(null);
+  const aiPolySeriesRef = useRef(null);
   const anomalySeriesRef = useRef(null);
   const indicatorSeriesRef = useRef([]);
 
@@ -321,7 +324,7 @@ export default function ChartView({
     }
   }, [candles]);
 
-  // ── Overlay indicators (SMA, EMA, BB) on main chart ──
+  // ── Overlay indicators (SMA, EMA, BB) on main chart — values from backend ──
   useEffect(() => {
     if (!chartRef.current) return;
 
@@ -330,15 +333,10 @@ export default function ChartView({
     });
     indicatorSeriesRef.current = [];
 
-    if (!indicators?.length || !candles?.length) return;
-
-    const cleanData = candles
-      .map(c => ({ ...c, time: Math.floor(Number(c.time)), close: Number(c.close) }))
-      .filter(c => Number.isFinite(c.time) && Number.isFinite(c.close))
-      .sort((a, b) => a.time - b.time);
+    if (!indicators?.length) return;
 
     const addLine = (data, color, title) => {
-      if (data.length === 0) return;
+      if (!data?.length) return;
       const series = chartRef.current.addLineSeries({
         color,
         lineWidth: 1,
@@ -351,18 +349,15 @@ export default function ChartView({
       indicatorSeriesRef.current.push(series);
     };
 
-    if (indicators.includes('SMA')) {
-      addLine(simpleMovingAverage(cleanData, 20), '#38bdf8', 'SMA 20');
+    if (indicators.includes('SMA') && indicatorData.SMA?.values?.length)
+      addLine(indicatorData.SMA.values, '#38bdf8', `SMA ${indicatorData.SMA.period ?? 20}`);
+    if (indicators.includes('EMA') && indicatorData.EMA?.values?.length)
+      addLine(indicatorData.EMA.values, '#f59e0b', `EMA ${indicatorData.EMA.period ?? 20}`);
+    if (indicators.includes('BB') && indicatorData.BB) {
+      addLine(indicatorData.BB.upper, '#a855f7', 'BB Upper');
+      addLine(indicatorData.BB.lower, '#a855f7', 'BB Lower');
     }
-    if (indicators.includes('EMA')) {
-      addLine(exponentialMovingAverage(cleanData, 20), '#f59e0b', 'EMA 20');
-    }
-    if (indicators.includes('BB')) {
-      const bands = bollingerBands(cleanData, 20, 2);
-      addLine(bands.upper, '#a855f7', 'BB Upper');
-      addLine(bands.lower, '#a855f7', 'BB Lower');
-    }
-  }, [indicators, candles]);
+  }, [indicators, indicatorData]);
 
   // ── Sub-chart indicators: RSI and MACD ──
   useEffect(() => {
@@ -376,110 +371,79 @@ export default function ChartView({
       macdChartRef.current = null;
     }
 
-    if (!candles?.length) return;
-
-    const cleanData = candles
-      .map(c => ({ ...c, time: Math.floor(Number(c.time)), close: Number(c.close) }))
-      .filter(c => Number.isFinite(c.time) && Number.isFinite(c.close))
-      .sort((a, b) => a.time - b.time);
-
     const colors = CHART_THEMES[themeRef.current] || CHART_THEMES.dark;
-    const subChartOptions = (container) => ({
+    const baseSubOpts = (container, height, scaleMargins) => ({
       width: container.clientWidth,
-      height: 110,
+      height,
       layout: { background: { color: colors.background }, textColor: colors.text },
       grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
-      rightPriceScale: { borderColor: colors.border, scaleMargins: { top: 0.1, bottom: 0.1 } },
+      rightPriceScale: { borderColor: colors.border, scaleMargins },
       timeScale: { borderColor: colors.border, timeVisible: false, secondsVisible: false },
       crosshair: { mode: 1 },
       handleScroll: false,
       handleScale: false,
     });
 
-    // RSI
-    if (indicators.includes('RSI') && rsiContainerRef.current) {
-      const rsiChart = createChart(rsiContainerRef.current, subChartOptions(rsiContainerRef.current));
-      const rsiData = calculateRSI(cleanData, 14);
-
+    // RSI — values from backend
+    if (indicators.includes('RSI') && rsiContainerRef.current && indicatorData.RSI?.values?.length) {
+      const rsiData = indicatorData.RSI.values;
+      const rsiChart = createChart(
+        rsiContainerRef.current,
+        baseSubOpts(rsiContainerRef.current, 110, { top: 0.1, bottom: 0.1 })
+      );
       const rsiSeries = rsiChart.addLineSeries({
-        color: '#f59e0b',
-        lineWidth: 1,
-        priceLineVisible: false,
-        lastValueVisible: true,
-        title: 'RSI 14',
+        color: '#f59e0b', lineWidth: 1, priceLineVisible: false,
+        lastValueVisible: false, crosshairMarkerVisible: true,
       });
       rsiSeries.setData(rsiData);
-
-      // Overbought line (70)
-      if (rsiData.length > 0) {
-        const obSeries = rsiChart.addLineSeries({
-          color: '#ef444466',
-          lineWidth: 1,
-          lineStyle: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
-        obSeries.setData(rsiData.map(d => ({ time: d.time, value: 70 })));
-
-        // Oversold line (30)
-        const osSeries = rsiChart.addLineSeries({
-          color: '#22c55e66',
-          lineWidth: 1,
-          lineStyle: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
-        osSeries.setData(rsiData.map(d => ({ time: d.time, value: 30 })));
-      }
-
+      const obSeries = rsiChart.addLineSeries({
+        color: '#ef444466', lineWidth: 1, lineStyle: 2,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+      obSeries.setData(rsiData.map(d => ({ time: d.time, value: 70 })));
+      const osSeries = rsiChart.addLineSeries({
+        color: '#22c55e66', lineWidth: 1, lineStyle: 2,
+        priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+      });
+      osSeries.setData(rsiData.map(d => ({ time: d.time, value: 30 })));
       rsiChart.timeScale().fitContent();
       rsiChartRef.current = rsiChart;
     }
 
-    // MACD
-    if (indicators.includes('MACD') && macdContainerRef.current) {
-      const macdChart = createChart(macdContainerRef.current, subChartOptions(macdContainerRef.current));
-      const { macdLine, signalLine, histogram } = calculateMACD(cleanData);
-
-      if (histogram.length > 0) {
-        const histSeries = macdChart.addHistogramSeries({
-          color: '#334155',
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-        histSeries.setData(histogram.map(d => ({
-          time: d.time,
-          value: d.value,
-          color: d.value >= 0 ? '#22c55e66' : '#ef444466',
-        })));
+    // MACD — values from backend
+    if (indicators.includes('MACD') && macdContainerRef.current && indicatorData.MACD) {
+      const { macdLine, signalLine, histogram } = indicatorData.MACD;
+      if (macdLine?.length > 0) {
+        const macdChart = createChart(
+          macdContainerRef.current,
+          baseSubOpts(macdContainerRef.current, 130, { top: 0.2, bottom: 0.1 })
+        );
+        if (histogram?.length > 0) {
+          const histSeries = macdChart.addHistogramSeries({
+            color: '#334155', priceLineVisible: false, lastValueVisible: false,
+          });
+          histSeries.setData(histogram.map(d => ({
+            time: d.time, value: d.value,
+            color: d.value >= 0 ? '#22c55e66' : '#ef444466',
+          })));
+        }
+        if (macdLine.length > 0) {
+          const macdSeries = macdChart.addLineSeries({
+            color: '#38bdf8', lineWidth: 1, priceLineVisible: false,
+            lastValueVisible: false, crosshairMarkerVisible: true,
+          });
+          macdSeries.setData(macdLine);
+        }
+        if (signalLine?.length > 0) {
+          const signalSeries = macdChart.addLineSeries({
+            color: '#f97316', lineWidth: 1, priceLineVisible: false,
+            lastValueVisible: false, crosshairMarkerVisible: true,
+          });
+          signalSeries.setData(signalLine);
+        }
+        macdChart.timeScale().fitContent();
+        macdChartRef.current = macdChart;
       }
-
-      if (macdLine.length > 0) {
-        const macdSeries = macdChart.addLineSeries({
-          color: '#38bdf8',
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: true,
-          title: 'MACD',
-        });
-        macdSeries.setData(macdLine);
-      }
-
-      if (signalLine.length > 0) {
-        const signalSeries = macdChart.addLineSeries({
-          color: '#f97316',
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: true,
-          title: 'Signal',
-        });
-        signalSeries.setData(signalLine);
-      }
-
-      macdChart.timeScale().fitContent();
-      macdChartRef.current = macdChart;
     }
 
     // Resize handler for sub-charts
@@ -504,7 +468,7 @@ export default function ChartView({
         macdChartRef.current = null;
       }
     };
-  }, [indicators, candles, theme]);
+  }, [indicators, indicatorData, theme]);
 
   // ── Live candle update ──
   useEffect(() => {
@@ -524,10 +488,12 @@ export default function ChartView({
   useEffect(() => {
     if (!chartRef.current) return;
 
-    // Remove existing AI series
-    if (aiSeriesRef.current) {
-      try { chartRef.current.removeSeries(aiSeriesRef.current); } catch (_) {}
-      aiSeriesRef.current = null;
+    // Remove all existing AI series
+    for (const ref of [aiLinSeriesRef, aiPolySeriesRef, aiSeriesRef]) {
+      if (ref.current) {
+        try { chartRef.current.removeSeries(ref.current); } catch (_) {}
+        ref.current = null;
+      }
     }
 
     if (!aiPrediction?.predictedValues?.length || !candles?.length) return;
@@ -535,28 +501,61 @@ export default function ChartView({
     const lastCandle = candles[candles.length - 1];
     const intervalSeconds = timeframeToSeconds(timeframe);
 
-    // Build predicted data points starting from the candle AFTER the last one
-    const predData = aiPrediction.predictedValues.map((value, i) => ({
-      time: lastCandle.time + (i + 1) * intervalSeconds,
-      value,
-    }));
+    // Anchor-shift: move all values so projection starts exactly at lastCandle.close
+    const anchorShift = (rawVals) => {
+      const off = rawVals.length > 0 ? lastCandle.close - rawVals[0] : 0;
+      return [
+        { time: lastCandle.time, value: lastCandle.close },
+        ...rawVals.map((v, i) => ({
+          time: lastCandle.time + (i + 1) * intervalSeconds,
+          value: v + off,
+        })),
+      ];
+    };
 
+    const models = aiPrediction.models ?? {};
+
+    // Linear model line — thin blue dotted
+    if (models.linear_values?.length) {
+      const s = chartRef.current.addLineSeries({
+        color: '#60a5fa',
+        lineWidth: 1,
+        lineStyle: 3,           // dotted
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: `Linear R²:${(models.linear_r2 * 100).toFixed(1)}%`,
+      });
+      s.setData(anchorShift(models.linear_values));
+      aiLinSeriesRef.current = s;
+    }
+
+    // Polynomial model line — thin orange dotted
+    if (models.poly_values?.length) {
+      const s = chartRef.current.addLineSeries({
+        color: '#fb923c',
+        lineWidth: 1,
+        lineStyle: 3,           // dotted
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: `Poly R²:${(models.poly_r2 * 100).toFixed(1)}%`,
+      });
+      s.setData(anchorShift(models.poly_values));
+      aiPolySeriesRef.current = s;
+    }
+
+    // Ensemble line — purple dashed (main result)
     const s = chartRef.current.addLineSeries({
       color: '#a855f7',
       lineWidth: 2,
-      lineStyle: 2,          // dashed
+      lineStyle: 2,             // dashed
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: true,
-      title: `AI (${aiPrediction.direction} ${aiPrediction.confidence}%)`,
+      title: `AI (${aiPrediction.direction})`,
     });
-
-    // Anchor line at last close so it connects visually
-    s.setData([
-      { time: lastCandle.time, value: lastCandle.close },
-      ...predData,
-    ]);
-
+    s.setData(anchorShift(aiPrediction.predictedValues));
     aiSeriesRef.current = s;
   }, [aiPrediction, candles, timeframe]);
 
@@ -610,7 +609,8 @@ export default function ChartView({
   );
 }
 
-// ── Helper: timeframe string → seconds ──
+// ── Helpers ──
+
 function timeframeToSeconds(tf) {
   const map = {
     '1m': 60,
@@ -622,104 +622,3 @@ function timeframeToSeconds(tf) {
   return map[tf] ?? 300;
 }
 
-function simpleMovingAverage(data, period) {
-  const result = [];
-  for (let i = period - 1; i < data.length; i += 1) {
-    const slice = data.slice(i - period + 1, i + 1);
-    const value = slice.reduce((sum, item) => sum + item.close, 0) / period;
-    result.push({ time: data[i].time, value });
-  }
-  return result;
-}
-
-function exponentialMovingAverage(data, period) {
-  if (data.length < period) return [];
-
-  const result = [];
-  const multiplier = 2 / (period + 1);
-  let ema = data.slice(0, period).reduce((sum, item) => sum + item.close, 0) / period;
-  result.push({ time: data[period - 1].time, value: ema });
-
-  for (let i = period; i < data.length; i += 1) {
-    ema = ((data[i].close - ema) * multiplier) + ema;
-    result.push({ time: data[i].time, value: ema });
-  }
-  return result;
-}
-
-function bollingerBands(data, period, deviations) {
-  const upper = [];
-  const lower = [];
-
-  for (let i = period - 1; i < data.length; i += 1) {
-    const slice = data.slice(i - period + 1, i + 1);
-    const mean = slice.reduce((sum, item) => sum + item.close, 0) / period;
-    const variance = slice.reduce((sum, item) => sum + ((item.close - mean) ** 2), 0) / period;
-    const stdDev = Math.sqrt(variance);
-
-    upper.push({ time: data[i].time, value: mean + (stdDev * deviations) });
-    lower.push({ time: data[i].time, value: mean - (stdDev * deviations) });
-  }
-
-  return { upper, lower };
-}
-
-function calculateRSI(data, period = 14) {
-  if (data.length < period + 1) return [];
-  const result = [];
-  let avgGain = 0;
-  let avgLoss = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const diff = data[i].close - data[i - 1].close;
-    if (diff > 0) avgGain += diff;
-    else avgLoss += Math.abs(diff);
-  }
-  avgGain /= period;
-  avgLoss /= period;
-  result.push({ time: data[period].time, value: 100 - 100 / (1 + avgGain / (avgLoss || 1e-10)) });
-
-  for (let i = period + 1; i < data.length; i++) {
-    const diff = data[i].close - data[i - 1].close;
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? Math.abs(diff) : 0;
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
-    result.push({ time: data[i].time, value: 100 - 100 / (1 + avgGain / (avgLoss || 1e-10)) });
-  }
-  return result;
-}
-
-function calculateMACD(data, fast = 12, slow = 26, signal = 9) {
-  const fastEmaValues = exponentialMovingAverage(data, fast);
-  const slowEmaValues = exponentialMovingAverage(data, slow);
-
-  const fastMap = new Map(fastEmaValues.map(d => [d.time, d.value]));
-  const slowMap = new Map(slowEmaValues.map(d => [d.time, d.value]));
-
-  const macdLine = [];
-  for (const [time, slowVal] of slowMap) {
-    if (fastMap.has(time)) {
-      macdLine.push({ time, value: fastMap.get(time) - slowVal });
-    }
-  }
-  macdLine.sort((a, b) => a.time - b.time);
-
-  if (macdLine.length < signal) return { macdLine, signalLine: [], histogram: [] };
-
-  const k = 2 / (signal + 1);
-  let prev = macdLine.slice(0, signal).reduce((s, d) => s + d.value, 0) / signal;
-  const signalLine = [{ time: macdLine[signal - 1].time, value: prev }];
-
-  for (let i = signal; i < macdLine.length; i++) {
-    prev = macdLine[i].value * k + prev * (1 - k);
-    signalLine.push({ time: macdLine[i].time, value: prev });
-  }
-
-  const sigMap = new Map(signalLine.map(d => [d.time, d.value]));
-  const histogram = macdLine
-    .filter(d => sigMap.has(d.time))
-    .map(d => ({ time: d.time, value: d.value - sigMap.get(d.time) }));
-
-  return { macdLine, signalLine, histogram };
-}

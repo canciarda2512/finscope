@@ -1,14 +1,13 @@
 export async function fetchKlines(symbol, interval = '1m', limit = 1000, endTime) {
   try {
     const formattedSymbol = symbol.toUpperCase();
+    const baseUrl = process.env.BINANCE_REST_URL || 'https://api.binance.com';
 
-    let url = `https://api.binance.com/api/v3/klines?symbol=${formattedSymbol}&interval=${interval}&limit=${limit}`;
+    let url = `${baseUrl}/api/v3/klines?symbol=${formattedSymbol}&interval=${interval}&limit=${limit}`;
 
     if (endTime) {
       url += `&endTime=${endTime}`;
     }
-
-    console.log(`[${formattedSymbol}] Binance veri çekiliyor...`);
 
     const res = await fetch(url);
     const data = await res.json();

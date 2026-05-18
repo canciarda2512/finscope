@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, ArrowDownRight, ArrowUpRight, Eye, Search } from 'lucide-react';
+import { Activity, ArrowDownRight, ArrowUpRight, Eye, RefreshCw, Search } from 'lucide-react';
 import APIClient from '../services/APIClient';
 
 const TABS = [
@@ -48,52 +48,66 @@ function rsiTone(value) {
   return 'bg-blue-500/10 text-blue-400';
 }
 
+const REFRESH_INTERVAL = 60_000; // 60s
+
 export default function ScreenerPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('top-gainers');
   const [search, setSearch] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [queryStats, setQueryStats] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [secondsAgo, setSecondsAgo] = useState(0);
+  const timerRef = useRef(null);
 
+  const loadScreener = async (silent = false) => {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
+    setError('');
+
+    try {
+      const res = await APIClient.get('/screener', {
+        params: { tab: activeTab, limit: 10 },
+      });
+      setRows(Array.isArray(res.data.symbols) ? res.data.symbols : []);
+      setQueryStats({ queryTime: res.data.queryTime, rowsScanned: res.data.rowsScanned });
+      setLastUpdated(Date.now());
+      setSecondsAgo(0);
+    } catch (err) {
+      console.error('Screener load error:', err);
+      setRows([]);
+      setQueryStats(null);
+      setError('Data temporarily unavailable');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Fetch on tab change
   useEffect(() => {
-    let cancelled = false;
+    setRows([]);
+    setLastUpdated(null);
+    loadScreener(false);
+  }, [activeTab]); // eslint-disable-line
 
-    const loadScreener = async () => {
-      setLoading(true);
-      setError('');
+  // Auto-refresh every 60s
+  useEffect(() => {
+    const id = setInterval(() => loadScreener(true), REFRESH_INTERVAL);
+    return () => clearInterval(id);
+  }, [activeTab]); // eslint-disable-line
 
-      try {
-        const res = await APIClient.get('/screener', {
-          params: { tab: activeTab, limit: 10 },
-        });
-
-        if (!cancelled) {
-          setRows(Array.isArray(res.data.symbols) ? res.data.symbols : []);
-          setQueryStats({
-            queryTime: res.data.queryTime,
-            rowsScanned: res.data.rowsScanned,
-          });
-        }
-      } catch (err) {
-        console.error('Screener load error:', err);
-        if (!cancelled) {
-          setRows([]);
-          setQueryStats(null);
-          setError('Data temporarily unavailable');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    loadScreener();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab]);
+  // "X seconds ago" counter
+  useEffect(() => {
+    if (!lastUpdated) return;
+    timerRef.current = setInterval(() => {
+      setSecondsAgo(Math.floor((Date.now() - lastUpdated) / 1000));
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [lastUpdated]);
 
   const filteredRows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -139,10 +153,18 @@ export default function ScreenerPage() {
               className="w-full bg-[#020617] border border-slate-700 rounded-xl py-2 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-blue-500 transition-all"
             />
           </div>
-          <div className="flex items-center gap-3 text-xs text-slate-500">
-            <span className="flex items-center gap-1">
-              <div className="w-2 h-2 bg-slate-500 rounded-full" /> Snapshot
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] text-slate-600">
+              {lastUpdated ? `Updated ${secondsAgo}s ago` : 'Loading...'}
             </span>
+            <button
+              onClick={() => loadScreener(true)}
+              disabled={loading || refreshing}
+              title="Refresh"
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition disabled:opacity-40"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            </button>
           </div>
         </div>
 
@@ -161,7 +183,7 @@ export default function ScreenerPage() {
                 <th className="px-6 py-4 font-bold">Current Price</th>
                 <th className="px-6 py-4 font-bold">24h % Change</th>
                 <th className="px-6 py-4 font-bold">Volume (USDT, 24h)</th>
-                {showRsi && <th className="px-6 py-4 font-bold">RSI</th>}
+                {showRsi && <th className="px-6 py-4 font-bold">RSI 14 (1h)</th>}
                 <th className="px-6 py-4 font-bold text-right">View</th>
               </tr>
             </thead>
@@ -216,15 +238,22 @@ export default function ScreenerPage() {
           )}
 
           {!loading && filteredRows.length === 0 && !error && (
-            <div className="px-6 py-16 text-center text-slate-500 font-medium">
-              No symbols matched this screen.
+            <div className="px-6 py-16 text-center">
+              <p className="text-slate-500 font-medium mb-1">No symbols matched this screen.</p>
+              {showRsi && (
+                <p className="text-slate-600 text-xs">
+                  {activeTab === 'rsi-overbought'
+                    ? 'No coins currently above RSI 70 on the 1h timeframe.'
+                    : 'No coins currently below RSI 30 on the 1h timeframe.'}
+                </p>
+              )}
             </div>
           )}
         </div>
 
         <div className="mt-4 flex justify-between items-center px-2 text-[10px] text-slate-600 uppercase tracking-widest">
-          <span>{queryStats ? `${queryStats.queryTime} | ${Number(queryStats.rowsScanned || 0).toLocaleString()} rows scanned` : 'Snapshot query'}</span>
-          <span>Last sync: {queryStats ? new Date().toLocaleTimeString() : '-'}</span>
+          <span>{queryStats ? `${queryStats.queryTime} | ${Number(queryStats.rowsScanned || 0).toLocaleString()} rows scanned` : '—'}</span>
+          <span>Auto-refresh: 60s {showRsi ? '· RSI 14 (1h) · Wilder\'s smoothing' : ''}</span>
         </div>
       </div>
     </div>

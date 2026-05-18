@@ -135,7 +135,7 @@ router.get('/indicators', async (req, res) => {
   }
 
   const interval = TF_INTERVAL[timeframe];
-  const limit = Math.max(TF_LIMIT[timeframe], 200);
+  const limit = TF_LIMIT[timeframe];
 
   try {
     const sql = `
@@ -149,7 +149,7 @@ router.get('/indicators', async (req, res) => {
       FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
-      ORDER BY time ASC
+      ORDER BY time DESC
       LIMIT {lim: UInt32}
     `;
 
@@ -158,14 +158,16 @@ router.get('/indicators', async (req, res) => {
       lim: limit,
     });
 
-    const data = rows.map(r => ({
-      time: Number(r.time),
-      open: parseFloat(r.open),
-      high: parseFloat(r.high),
-      low: parseFloat(r.low),
-      close: parseFloat(r.close),
-      volume: parseFloat(r.volume),
-    }));
+    const data = rows
+      .map(r => ({
+        time: Number(r.time),
+        open: parseFloat(r.open),
+        high: parseFloat(r.high),
+        low: parseFloat(r.low),
+        close: parseFloat(r.close),
+        volume: parseFloat(r.volume),
+      }))
+      .reverse(); // ascending order, same time range as /candles
 
     const p = Number(period);
     let result;
@@ -310,29 +312,42 @@ router.delete('/drawings/:id', authMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────
 // Requires auth. Fetches last 150 daily candles from ClickHouse and forwards
 // to AI Service /predict. Returns direction, confidence, and predicted values.
+// How many candles to feed the regression per timeframe
+const PREDICT_LIMIT = {
+  '1m': 150,
+  '5m': 150,
+  '1D': 150,
+  '1W': 104,
+  '1M': 36,
+};
+
 router.post('/predict', authMiddleware, async (req, res) => {
   const { symbol = 'BTCUSDT', timeframe = '1D' } = req.body;
 
   if (!validateParams(symbol, timeframe, res)) return;
 
+  const interval = TF_INTERVAL[timeframe];
+  const table   = tableFor(timeframe);
+  const limit   = PREDICT_LIMIT[timeframe];
+
   try {
-    // 1. Pull candle history from ClickHouse for the AI model
+    // 1. Pull candle history from ClickHouse using the correct table + grouping for this timeframe
     const sql = `
       SELECT
-        toUnixTimestamp(toStartOfDay(timestamp)) AS time,
-        argMin(open,  timestamp) AS open,
-        max(high)                AS high,
-        min(low)                 AS low,
-        argMax(close, timestamp) AS close,
-        sum(volume)              AS volume
-      FROM market_data_daily
+        toUnixTimestamp(${interval}) AS time,
+        argMin(open,  timestamp)     AS open,
+        max(high)                    AS high,
+        min(low)                     AS low,
+        argMax(close, timestamp)     AS close,
+        sum(volume)                  AS volume
+      FROM ${table}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
-      LIMIT 150
+      LIMIT {lim: UInt32}
     `;
 
-    const { rows } = await query(sql, { sym: symbol.toUpperCase() });
+    const { rows } = await query(sql, { sym: symbol.toUpperCase(), lim: limit });
 
     // AI Service requires ascending order
     const candles = rows
@@ -348,7 +363,7 @@ router.post('/predict', authMiddleware, async (req, res) => {
 
     if (candles.length < 30) {
       return res.status(422).json({
-        error: `AI tahmini için en az 30 günlük veri gerekiyor (mevcut: ${candles.length}).`
+        error: `Not enough data for AI prediction on ${timeframe} (got ${candles.length} candles, need 30+).`
       });
     }
 

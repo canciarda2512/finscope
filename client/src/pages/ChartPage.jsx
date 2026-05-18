@@ -19,6 +19,49 @@ const AVAILABLE_SYMBOLS = [
   'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
 ];
 
+function AiBanner({ result, onClose }) {
+  const linR2 = result.models?.linear_r2 ?? null;
+  const polyR2 = result.models?.poly_r2 ?? null;
+  const hasModels = linR2 !== null && polyR2 !== null;
+  const linWins = hasModels && linR2 >= polyR2;
+  const bestR2 = hasModels ? Math.max(linR2, polyR2) : null;
+  const bestLabel = linWins ? 'Linear' : 'Polynomial';
+
+  return (
+    <div className="mb-3 bg-purple-950 border border-purple-700 rounded-lg px-4 py-2.5 text-sm text-purple-300 w-fit">
+      <div className="flex items-center gap-3">
+        <Brain size={14} />
+        <span>
+          AI projection · next 7 candles ·{' '}
+          <strong className={result.direction === 'UP' ? 'text-green-400' : 'text-red-400'}>
+            {result.direction}
+          </strong>
+          {hasModels
+            ? <>{' '}trend · Best model: <strong>{bestLabel} R²: {(bestR2 * 100).toFixed(1)}%</strong></>
+            : <>{' '}trend · Model fit: <strong>{result.confidence}%</strong></>
+          }
+        </span>
+        <button onClick={onClose} className="ml-2 text-purple-400 hover:text-white text-xs">×</button>
+      </div>
+      {hasModels && (
+        <div className="mt-1.5 flex items-center gap-2 text-[11px]">
+          <span className={linWins ? 'text-purple-200 font-semibold' : 'text-purple-500'}>
+            Linear: {(linR2 * 100).toFixed(1)}%{linWins ? ' ✓' : ''}
+          </span>
+          <span className="text-purple-700">·</span>
+          <span className={!linWins ? 'text-purple-200 font-semibold' : 'text-purple-500'}>
+            Polynomial: {(polyR2 * 100).toFixed(1)}%{!linWins ? ' ✓' : ''}
+          </span>
+          <span className="text-purple-700">·</span>
+          <span className="text-purple-600 italic">
+            weighted blend → {result.confidence}%
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChartPage() {
   const { isAuthenticated } = useAuth();
   const [searchParams] = useSearchParams();
@@ -33,6 +76,7 @@ export default function ChartPage() {
   const [currentPrice, setCurrentPrice] = useState(null);
   const [selectedOrderPrice, setSelectedOrderPrice] = useState('');
   const [activeIndicators, setActiveIndicators] = useState([]);
+  const [indicatorData, setIndicatorData] = useState({});
   const [symbol, setSymbol] = useState(
     AVAILABLE_SYMBOLS.includes(initialSymbol) ? initialSymbol : 'BTCUSDT'
   );
@@ -149,7 +193,7 @@ export default function ChartPage() {
         });
       } catch (err) {
         console.error('Fetch error:', err);
-        setError('Backend baglantisi kurulamadi.');
+        setError('Failed to connect to backend.');
       } finally {
         setLoading(false);
       }
@@ -247,6 +291,31 @@ export default function ChartPage() {
     prev.includes(ind) ? prev.filter(i => i !== ind) : [...prev, ind]
   );
 
+  // ── Backend indicator fetch ──
+  useEffect(() => {
+    if (activeIndicators.length === 0) {
+      setIndicatorData({});
+      return;
+    }
+    const PERIOD = { SMA: 20, EMA: 20, RSI: 14, MACD: 26, BB: 20 };
+    let cancelled = false;
+    Promise.allSettled(
+      activeIndicators.map(type =>
+        APIClient.get('/chart/indicators', {
+          params: { symbol, timeframe, type, period: PERIOD[type] ?? 20 },
+        }).then(res => ({ type, data: res.data }))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      const next = {};
+      for (const r of results) {
+        if (r.status === 'fulfilled') next[r.value.type] = r.value.data;
+      }
+      setIndicatorData(next);
+    });
+    return () => { cancelled = true; };
+  }, [activeIndicators, symbol, timeframe]);
+
   return (
     <div className="bg-[#020617] min-h-screen p-4 text-slate-300">
       <div className="flex items-center gap-4 mb-3">
@@ -267,7 +336,7 @@ export default function ChartPage() {
             ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         )}
-        {loading && <span className="text-slate-500 text-xs animate-pulse">Yukleniyor...</span>}
+        {loading && <span className="text-slate-500 text-xs animate-pulse">Loading...</span>}
         {error && <span className="text-red-400 text-xs">{error}</span>}
       </div>
 
@@ -316,7 +385,7 @@ export default function ChartPage() {
               <button
                 onClick={handleAIPrediction}
                 disabled={aiLoading}
-                title="AI tabanli trend tahmini"
+                title="Linear regression projection for next 7 candles"
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
                   ${aiResult
                     ? 'bg-purple-700 text-white ring-1 ring-purple-400'
@@ -325,16 +394,16 @@ export default function ChartPage() {
               >
                 <Brain size={13} />
                 {aiLoading
-                  ? 'Tahmin ediliyor...'
+                  ? 'Predicting...'
                   : aiResult
-                    ? `${aiResult.direction === 'UP' ? 'UP' : 'DOWN'} (${aiResult.confidence}%)`
+                    ? `Trend: ${aiResult.direction}`
                     : 'AI Prediction'}
               </button>
 
               <button
                 onClick={handleAnomalyDetection}
                 disabled={anomalyLoading}
-                title="Volume spike ve fiyat anomalisi tespiti"
+                title="Volume spike and price anomaly detection"
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
                   ${anomalyActive
                     ? 'bg-orange-600 text-white ring-1 ring-orange-400'
@@ -343,9 +412,9 @@ export default function ChartPage() {
               >
                 <AlertTriangle size={13} />
                 {anomalyLoading
-                  ? 'Analiz ediliyor...'
+                  ? 'Analyzing...'
                   : anomalyActive
-                    ? `${anomalies.length} anomali`
+                    ? `${anomalies.length} anomalies`
                     : 'Anomaly Detection'}
               </button>
             </>
@@ -368,18 +437,7 @@ export default function ChartPage() {
         </div>
       )}
 
-      {aiResult && (
-        <div className="mb-3 flex items-center gap-3 bg-purple-950 border border-purple-700 rounded-lg px-4 py-2 text-sm text-purple-300 w-fit">
-          <Brain size={14} />
-          <span>
-            <strong className={aiResult.direction === 'UP' ? 'text-green-400' : 'text-red-400'}>
-              {aiResult.direction === 'UP' ? 'YUKARI' : 'ASAGI'} trend
-            </strong>
-            {' '}Guven: <strong>{aiResult.confidence}%</strong>
-          </span>
-          <button onClick={() => setAiResult(null)} className="ml-2 text-purple-400 hover:text-white text-xs">x</button>
-        </div>
-      )}
+      {aiResult && <AiBanner result={aiResult} onClose={() => setAiResult(null)} />}
 
       {aiError && (
         <div className="mb-3 text-[11px] text-red-400 bg-red-950 border border-red-800 rounded px-3 py-1.5 w-fit flex items-center gap-2">
@@ -469,6 +527,7 @@ export default function ChartPage() {
             aiPrediction={aiResult}
             anomalies={anomalyActive ? anomalies : []}
             indicators={activeIndicators}
+            indicatorData={indicatorData}
             savedDrawings={drawings}
             onPriceSelect={price => setSelectedOrderPrice(price?.toFixed(2) || '')}
             onDrawingCreated={handleDrawingCreated}
@@ -480,7 +539,7 @@ export default function ChartPage() {
               </span>
             )}
             {anomalyActive && (
-              <span className="text-orange-400">{anomalies.length} anomali tespit edildi</span>
+              <span className="text-orange-400">{anomalies.length} anomalies detected</span>
             )}
           </div>
         </div>

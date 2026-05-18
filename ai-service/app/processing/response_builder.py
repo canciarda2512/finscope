@@ -5,6 +5,7 @@ def build_prediction_response(result: dict, symbol: str, timeframe: str) -> dict
         "direction": result["direction"],
         "confidence": result["confidence"],
         "predictedValues": result["predictedValues"],
+        "models": result.get("models", {}),
     }
 
 

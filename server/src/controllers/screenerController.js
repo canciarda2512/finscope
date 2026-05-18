@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../services/ClickHouseClient.js';
 import { fetch24hTickers, fetchKlines } from '../services/BinanceService.js';
+import { rsi as calcRsi } from '../services/IndicatorCalculator.js';
 
 const router = Router();
 const DEFAULT_LIMIT = 10;
@@ -36,24 +37,6 @@ function mapRow(row) {
   };
 }
 
-function calculateRsi(closes) {
-  if (!Array.isArray(closes) || closes.length < 15) return null;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i < closes.length; i += 1) {
-    const diff = Number(closes[i]) - Number(closes[i - 1]);
-    if (diff > 0) gains += diff;
-    if (diff < 0) losses += Math.abs(diff);
-  }
-
-  const avgGain = gains / 14;
-  const avgLoss = losses / 14;
-  if (avgLoss === 0) return 100;
-
-  return 100 - (100 / (1 + (avgGain / avgLoss)));
-}
 
 async function getBinanceMovementRows(tab, limit) {
   const tickers = await fetch24hTickers();
@@ -87,11 +70,17 @@ async function getBinanceRsiRows(tab, limit) {
     const ticker = tickerBySymbol.get(symbol);
     if (!ticker) return null;
 
-    const klines = await fetchKlines(symbol, '1h', 15);
-    const rsi = calculateRsi(klines.map(k => k.close));
+    const klines = await fetchKlines(symbol, '1h', 50);
+    if (!klines.length) {
+      console.warn(`[screener] ${symbol} klines empty — Binance may be unavailable`);
+      return null;
+    }
+    const rsiValues = calcRsi(klines, 14);
+    const rsi = rsiValues.length > 0 ? rsiValues[rsiValues.length - 1].value : null;
 
     if (
       rsi === null ||
+      !Number.isFinite(rsi) ||
       !Number.isFinite(ticker.currentPrice) ||
       !Number.isFinite(ticker.change24h) ||
       !Number.isFinite(ticker.volume24h)
@@ -169,86 +158,95 @@ async function getMovementRows(tab, limit) {
 }
 
 async function getRsiRows(tab, limit) {
-  const comparator = tab === 'rsi-overbought' ? '>=' : '<=';
-  const order = tab === 'rsi-overbought' ? 'DESC' : 'ASC';
+  const symbolList = SCREENER_SYMBOLS.map(s => `'${s}'`).join(', ');
 
-  const sql = `
-    WITH latest AS (
-      SELECT
-        symbol,
-        argMax(close, timestamp) AS currentPrice
-      FROM market_data
-      GROUP BY symbol
-    ),
-    previous AS (
-      SELECT
-        symbol,
-        argMax(close, timestamp) AS price24hAgo
-      FROM market_data
-      WHERE timestamp <= now() - INTERVAL 24 HOUR
-      GROUP BY symbol
-    ),
-    volume AS (
-      SELECT
-        symbol,
-        sum(volume) AS volume24h
-      FROM market_data
-      WHERE timestamp >= now() - INTERVAL 24 HOUR
-      GROUP BY symbol
-    ),
-    recent AS (
-      SELECT
-        symbol,
-        timestamp,
-        close,
-        row_number() OVER (PARTITION BY symbol ORDER BY timestamp DESC) AS rn
-      FROM market_data
-    ),
-    diffs AS (
-      SELECT
-        symbol,
-        timestamp,
-        close - lagInFrame(close) OVER (
-          PARTITION BY symbol
-          ORDER BY timestamp ASC
-          ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-        ) AS diff
-      FROM recent
-      WHERE rn <= 15
-    ),
-    rsi_calc AS (
-      SELECT
-        symbol,
-        sum(if(diff > 0, diff, 0)) / 14 AS avgGain,
-        sum(if(diff < 0, abs(diff), 0)) / 14 AS avgLoss,
-        countIf(diff IS NOT NULL) AS periods
-      FROM diffs
-      GROUP BY symbol
-    )
-    SELECT *
+  // Last 50 1h closes per symbol — LIMIT N BY avoids timestamp range issues
+  const closesSql = `
+    SELECT symbol, time, close
     FROM (
       SELECT
-        latest.symbol AS symbol,
-        latest.currentPrice AS currentPrice,
-        ((latest.currentPrice - previous.price24hAgo) / previous.price24hAgo) * 100 AS change24h,
-        volume.volume24h AS volume24h,
-        if(rsi_calc.avgLoss = 0, 100, 100 - (100 / (1 + (rsi_calc.avgGain / rsi_calc.avgLoss)))) AS rsi
-      FROM rsi_calc
-      INNER JOIN latest ON rsi_calc.symbol = latest.symbol
-      INNER JOIN previous ON rsi_calc.symbol = previous.symbol
-      INNER JOIN volume ON rsi_calc.symbol = volume.symbol
-      WHERE rsi_calc.periods >= 14
-        AND latest.currentPrice > 0
-        AND previous.price24hAgo > 0
-        AND volume.volume24h > 0
+        symbol,
+        toUnixTimestamp(toStartOfHour(timestamp)) AS time,
+        argMax(close, timestamp) AS close
+      FROM market_data
+      WHERE symbol IN (${symbolList})
+      GROUP BY symbol, time
+      ORDER BY symbol ASC, time DESC
+      LIMIT 50 BY symbol
     )
-    WHERE rsi ${comparator} ${tab === 'rsi-overbought' ? 70 : 30}
-    ORDER BY rsi ${order}
-    LIMIT {limit:UInt32}
+    ORDER BY symbol ASC, time ASC
   `;
 
-  const result = await query(sql, { limit });
-  return result;
+  // Current price, 24h change, volume
+  const metaSql = `
+    WITH latest AS (
+      SELECT symbol, argMax(close, timestamp) AS currentPrice
+      FROM market_data WHERE symbol IN (${symbolList}) GROUP BY symbol
+    ),
+    previous AS (
+      SELECT symbol, argMax(close, timestamp) AS price24hAgo
+      FROM market_data
+      WHERE symbol IN (${symbolList}) AND timestamp <= now() - INTERVAL 24 HOUR
+      GROUP BY symbol
+    ),
+    vol AS (
+      SELECT symbol, sum(volume) AS volume24h
+      FROM market_data
+      WHERE symbol IN (${symbolList}) AND timestamp >= now() - INTERVAL 24 HOUR
+      GROUP BY symbol
+    )
+    SELECT
+      latest.symbol,
+      latest.currentPrice,
+      ((latest.currentPrice - previous.price24hAgo) / previous.price24hAgo) * 100 AS change24h,
+      vol.volume24h
+    FROM latest
+    LEFT JOIN previous ON latest.symbol = previous.symbol
+    LEFT JOIN vol ON latest.symbol = vol.symbol
+    WHERE latest.currentPrice > 0
+  `;
+
+  const [closesResult, metaResult] = await Promise.all([
+    query(closesSql),
+    query(metaSql),
+  ]);
+
+  const metaMap = new Map();
+  for (const row of metaResult.rows) {
+    metaMap.set(row.symbol, {
+      currentPrice: parseFloat(row.currentPrice),
+      change24h: parseFloat(row.change24h ?? 0),
+      volume24h: parseFloat(row.volume24h ?? 0),
+    });
+  }
+
+  const bySymbol = new Map();
+  for (const row of closesResult.rows) {
+    if (!bySymbol.has(row.symbol)) bySymbol.set(row.symbol, []);
+    bySymbol.get(row.symbol).push({ time: Number(row.time), close: parseFloat(row.close) });
+  }
+
+  const threshold = tab === 'rsi-overbought' ? 70 : 30;
+  const filtered = [];
+  for (const [symbol, candles] of bySymbol) {
+    const meta = metaMap.get(symbol);
+    if (!meta) continue;
+    const rsiValues = calcRsi(candles, 14);
+    if (!rsiValues.length) continue;
+    const rsi = rsiValues[rsiValues.length - 1].value;
+    if (!Number.isFinite(rsi)) continue;
+    const passes = tab === 'rsi-overbought' ? rsi >= threshold : rsi <= threshold;
+    if (!passes) continue;
+    filtered.push({ symbol, ...meta, rsi });
+  }
+
+  filtered.sort((a, b) => tab === 'rsi-overbought' ? b.rsi - a.rsi : a.rsi - b.rsi);
+
+  return {
+    rows: filtered.slice(0, limit),
+    queryTime: closesResult.queryTime,
+    rowsRead: closesResult.rowsRead,
+  };
 }
 
 router.get('/', async (req, res, next) => {

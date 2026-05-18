@@ -4,8 +4,8 @@ import APIClient from '../services/APIClient';
 import {
   BadgeCheck, Edit2, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight,
   Shield, Settings, BarChart3, Wallet, Clock, Lock,
-  Smartphone, Bell, Globe, EyeOff, AlertTriangle, CheckCircle2,
-  RefreshCw, Zap, Target, Award, X, Check, ShieldCheck, ShieldOff,
+  Smartphone, Bell, EyeOff, AlertTriangle, CheckCircle2,
+  Zap, Target, Award, X, Check, ShieldCheck, ShieldOff,
 } from 'lucide-react';
 
 // ── Formatters ───────────────────────────────────────────────────────────────
@@ -928,37 +928,43 @@ function SettingsRow({ icon: Icon, title, desc, control }) {
   );
 }
 
-function Toggle({ on = false }) {
-  const [active, setActive] = useState(on);
+function Toggle({ on = false, onChange }) {
   return (
-    <button onClick={() => setActive(v => !v)}
-      className={`w-11 h-6 rounded-full transition-all relative ${active ? 'bg-blue-500' : 'bg-slate-700'}`}>
-      <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${active ? 'left-5.5 left-[22px]' : 'left-0.5'}`} />
+    <button onClick={() => onChange(!on)}
+      className={`w-11 h-6 rounded-full transition-all relative ${on ? 'bg-blue-500' : 'bg-slate-700'}`}>
+      <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${on ? 'left-[22px]' : 'left-0.5'}`} />
     </button>
   );
 }
 
 function SettingsTab({ user }) {
+  const storageKey = `finscope_notif_${user?.id || 'default'}`;
+
+  const [prefs, setPrefs] = useState(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : { tradeExecutions: true, priceAlerts: true, limitOrderFills: false };
+    } catch {
+      return { tradeExecutions: true, priceAlerts: true, limitOrderFills: false };
+    }
+  });
+
+  const update = (key, value) => {
+    const next = { ...prefs, [key]: value };
+    setPrefs(next);
+    localStorage.setItem(storageKey, JSON.stringify(next));
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6">
         <h3 className="text-sm font-semibold text-slate-300 mb-6">Notifications</h3>
-        <SettingsRow icon={Bell} title="Trade Executions" desc="Get notified when your trades are filled" control={<Toggle on={true} />} />
-        <SettingsRow icon={Bell} title="Price Alerts" desc="Receive alerts when price targets are hit" control={<Toggle on={true} />} />
-        <SettingsRow icon={Bell} title="Limit Order Fills" desc="Alerts when limit orders execute" control={<Toggle on={false} />} />
-      </div>
-      <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6">
-        <h3 className="text-sm font-semibold text-slate-300 mb-6">Display Preferences</h3>
-<SettingsRow icon={Globe} title="Currency" desc="Display currency for prices" control={
-          <select className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-1.5">
-            <option>USD</option><option>EUR</option><option>GBP</option>
-          </select>
-        } />
-        <SettingsRow icon={RefreshCw} title="Auto-refresh Interval" desc="How often to refresh market data" control={
-          <select className="bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-lg px-3 py-1.5">
-            <option>5s</option><option>10s</option><option>30s</option><option>1m</option>
-          </select>
-        } />
+        <SettingsRow icon={Bell} title="Trade Executions" desc="Get notified when your trades are filled"
+          control={<Toggle on={prefs.tradeExecutions} onChange={v => update('tradeExecutions', v)} />} />
+        <SettingsRow icon={Bell} title="Price Alerts" desc="Receive alerts when price targets are hit"
+          control={<Toggle on={prefs.priceAlerts} onChange={v => update('priceAlerts', v)} />} />
+        <SettingsRow icon={Bell} title="Limit Order Fills" desc="Alerts when limit orders execute"
+          control={<Toggle on={prefs.limitOrderFills} onChange={v => update('limitOrderFills', v)} />} />
       </div>
     </div>
   );
