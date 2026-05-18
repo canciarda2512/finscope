@@ -191,7 +191,7 @@ export default function PortfolioPage() {
                       <td className="px-5 py-4">
                         <p className="font-bold text-white text-sm tracking-tight">{pos.symbol.replace('USDT', '/USDT')}</p>
                         <p className="text-[10px] text-slate-500 font-mono italic">{number(pos.quantity)} units</p>
-                        <p className="text-[10px] text-slate-600 font-mono">Avg {money(pos.entryPrice)}</p>
+                        <p className="text-[10px] text-slate-600 font-mono">Avg {money(pos.avgCost ?? pos.entryPrice)}</p>
                       </td>
                       <td className="px-5 py-4 text-right">
                         <p className={`text-sm font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{money(pos.pnl)}</p>

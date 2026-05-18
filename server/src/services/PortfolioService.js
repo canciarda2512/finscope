@@ -123,6 +123,8 @@ function calculateRealizedPnL(trades) {
     closedTrades,
     winningTrades,
     winRate: closedTrades > 0 ? (winningTrades / closedTrades) * 100 : 0,
+    // Authoritative avgCost per symbol derived from full trade replay
+    avgCosts: positionsBySymbol,
   };
 }
 
@@ -452,18 +454,22 @@ export async function getPortfolioSnapshot(userId) {
     const latestPrice = await getLatestPrice(position.symbol);
     const currentPrice = latestPrice || toNumber(position.entryPrice);
     const quantity = toNumber(position.quantity);
-    const entryPrice = toNumber(position.entryPrice);
+    // Use avgCost from trade replay as the authoritative cost basis.
+    // Falls back to DB entryPrice only if trade history is empty.
+    const avgCost = realized.avgCosts.get(position.symbol)?.avgCost
+      ?? toNumber(position.entryPrice);
     const value = quantity * currentPrice;
-    const pnl = (currentPrice - entryPrice) * quantity;
+    const pnl = (currentPrice - avgCost) * quantity;
 
     positionsValue += value;
     unrealizedPnL += pnl;
     enrichedPositions.push({
       ...position,
+      avgCost,
       currentPrice,
       value,
       pnl,
-      pnlPercent: entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0,
+      pnlPercent: avgCost > 0 ? ((currentPrice - avgCost) / avgCost) * 100 : 0,
     });
   }
 

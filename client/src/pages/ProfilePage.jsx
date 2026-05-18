@@ -270,7 +270,7 @@ function OverviewTab({ data, loading }) {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-white">{p.symbol?.replace('USDT', '')}<span className="text-slate-500 font-normal">/USDT</span></p>
-                        <p className="text-[11px] text-slate-500">{Number(p.quantity || 0).toFixed(4)} qty · @{fmtUSD(p.entryPrice)}</p>
+                        <p className="text-[11px] text-slate-500">{Number(p.quantity || 0).toFixed(4)} qty · @{fmtUSD(p.avgCost ?? p.entryPrice)}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -401,7 +401,7 @@ function PortfolioTab({ data }) {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-300">{Number(p.quantity || 0).toFixed(4)}</td>
-                    <td className="px-6 py-4 text-sm text-slate-300">{fmtUSD(p.entryPrice)}</td>
+                    <td className="px-6 py-4 text-sm text-slate-300">{fmtUSD(p.avgCost ?? p.entryPrice)}</td>
                     <td className="px-6 py-4 text-sm text-white font-medium">{fmtUSD(p.currentPrice)}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-white">{fmtUSD(p.value)}</td>
                     <td className="px-6 py-4">
