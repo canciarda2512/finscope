@@ -7,6 +7,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { initClickHouse } from './services/ClickHouseClient.js';
 import { initRedis, shutdownRedis } from './services/RedisBuffer.js';
 import { runDataFetcher } from './background/DataFetcher.js';
+import { startStrategyExecutor } from './background/StrategyExecutor.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -61,6 +62,9 @@ async function start() {
     runDataFetcher().catch(err => {
       console.error('❌ DataFetcher hatası:', err.message);
     });
+
+    // 4. Start live strategy execution engine
+    startStrategyExecutor();
 
   } catch (error) {
     console.error('❌ Server başlatılırken hata:', error.message);

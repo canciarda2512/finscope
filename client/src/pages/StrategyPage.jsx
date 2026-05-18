@@ -150,24 +150,28 @@ export default function StrategyPage() {
     setDragIdx(null);
   };
 
+  const inputStyle = { backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' };
+  const rowStyle = { backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' };
+
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-zinc-400">Loading strategies...</div>;
+    return <div className="flex items-center justify-center h-64" style={{ color: 'var(--text-muted)' }}>Loading strategies...</div>;
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6" style={{ color: 'var(--text-secondary)' }}>
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Strategy Builder</h1>
+        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Strategy Builder</h1>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm"
+          className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm"
+          style={{ backgroundColor: 'var(--accent)' }}
         >
           <Plus size={16} /> New Strategy
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-2 rounded-lg text-sm">
+        <div className="px-4 py-2 rounded-lg text-sm" style={{ backgroundColor: 'var(--red-muted)', border: '1px solid var(--red)', color: 'var(--red)' }}>
           {error}
           <button onClick={() => setError('')} className="ml-2 underline">dismiss</button>
         </div>
@@ -175,17 +179,18 @@ export default function StrategyPage() {
 
       {/* ── Create Form ── */}
       {showCreate && (
-        <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5 space-y-4">
+        <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
           <input
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Strategy name"
-            className="w-full bg-zinc-900 border border-zinc-600 rounded-lg px-3 py-2 text-white text-sm"
+            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
+            style={inputStyle}
           />
 
           {/* Conditions */}
           <div>
-            <h3 className="text-sm font-semibold text-zinc-300 mb-2">Conditions (drag to reorder)</h3>
+            <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Conditions (drag to reorder)</h3>
             {conditions.map((c, i) => (
               <div
                 key={i}
@@ -193,78 +198,80 @@ export default function StrategyPage() {
                 onDragStart={() => onDragStart(i)}
                 onDragOver={onDragOver}
                 onDrop={() => onDrop(i)}
-                className="flex items-center gap-2 mb-2 bg-zinc-900 p-2 rounded-lg border border-zinc-700 cursor-grab"
+                className="flex items-center gap-2 mb-2 p-2 rounded-lg cursor-grab"
+                style={rowStyle}
               >
                 <select value={c.type} onChange={e => updateCondition(i, 'type', e.target.value)}
-                  className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-white text-xs">
+                  className="rounded px-2 py-1 text-xs" style={inputStyle}>
                   {CONDITION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
 
                 {c.type === 'indicator' && (
                   <select value={c.parameter} onChange={e => updateCondition(i, 'parameter', e.target.value)}
-                    className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-white text-xs">
+                    className="rounded px-2 py-1 text-xs" style={inputStyle}>
                     {INDICATOR_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 )}
                 {c.type === 'price' && (
                   <select value={c.parameter} onChange={e => updateCondition(i, 'parameter', e.target.value)}
-                    className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-white text-xs">
+                    className="rounded px-2 py-1 text-xs" style={inputStyle}>
                     {PRICE_PARAMS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
                 )}
                 {c.type === 'volume' && (
-                  <span className="text-xs text-zinc-400 px-2">Volume</span>
+                  <span className="text-xs px-2" style={{ color: 'var(--text-muted)' }}>Volume</span>
                 )}
                 {c.type === 'time' && (
-                  <span className="text-xs text-zinc-400 px-2">Hour (UTC)</span>
+                  <span className="text-xs px-2" style={{ color: 'var(--text-muted)' }}>Hour (UTC)</span>
                 )}
 
                 <select value={c.operator} onChange={e => updateCondition(i, 'operator', e.target.value)}
-                  className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-white text-xs w-16">
+                  className="rounded px-2 py-1 text-xs w-16" style={inputStyle}>
                   {OPERATORS.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
 
                 <input type="number" value={c.value} onChange={e => updateCondition(i, 'value', e.target.value)}
-                  className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-white text-xs w-24" />
+                  className="rounded px-2 py-1 text-xs w-24" style={inputStyle} />
 
                 <button onClick={() => setConditions(prev => prev.filter((_, idx) => idx !== i))}
-                  className="text-red-400 hover:text-red-300 p-1" disabled={conditions.length <= 1}>
+                  className="p-1" style={{ color: 'var(--red)' }} disabled={conditions.length <= 1}>
                   <Trash2 size={14} />
                 </button>
               </div>
             ))}
             <button onClick={() => setConditions(prev => [...prev, emptyCondition()])}
-              className="text-xs text-blue-400 hover:text-blue-300">+ Add condition</button>
+              className="text-xs" style={{ color: 'var(--accent-text)' }}>+ Add condition</button>
           </div>
 
           {/* Actions */}
           <div>
-            <h3 className="text-sm font-semibold text-zinc-300 mb-2">Actions</h3>
+            <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>Actions</h3>
             {actions.map((a, i) => (
-              <div key={i} className="flex items-center gap-2 mb-2 bg-zinc-900 p-2 rounded-lg border border-zinc-700">
+              <div key={i} className="flex items-center gap-2 mb-2 p-2 rounded-lg" style={rowStyle}>
                 <select value={a.type} onChange={e => updateAction(i, 'type', e.target.value)}
-                  className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-white text-xs">
+                  className="rounded px-2 py-1 text-xs" style={inputStyle}>
                   {ACTION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
 
                 {(a.type === 'buy' || a.type === 'sell') && (
                   <input type="number" value={a.quantity} onChange={e => updateAction(i, 'quantity', e.target.value)}
                     placeholder="Quantity" step="0.001"
-                    className="bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-white text-xs w-28" />
+                    className="rounded px-2 py-1 text-xs w-28" style={inputStyle} />
                 )}
 
                 <button onClick={() => setActions(prev => prev.filter((_, idx) => idx !== i))}
-                  className="text-red-400 hover:text-red-300 p-1" disabled={actions.length <= 1}>
+                  className="p-1" style={{ color: 'var(--red)' }} disabled={actions.length <= 1}>
                   <Trash2 size={14} />
                 </button>
               </div>
             ))}
             <button onClick={() => setActions(prev => [...prev, emptyAction()])}
-              className="text-xs text-blue-400 hover:text-blue-300">+ Add action</button>
+              className="text-xs" style={{ color: 'var(--accent-text)' }}>+ Add action</button>
           </div>
 
           <button onClick={handleCreate} disabled={creating || !name.trim()}
-            className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-zinc-600 text-white rounded-lg text-sm">
+            className="px-4 py-2 text-white rounded-lg text-sm disabled:opacity-50"
+            style={{ backgroundColor: 'var(--green)' }}>
             {creating ? 'Creating...' : 'Create Strategy'}
           </button>
         </div>
@@ -272,34 +279,36 @@ export default function StrategyPage() {
 
       {/* ── Strategy List ── */}
       {strategies.length === 0 && !showCreate && (
-        <div className="text-center text-zinc-500 py-12">No strategies yet. Create one to get started.</div>
+        <div className="text-center py-12" style={{ color: 'var(--text-muted)' }}>No strategies yet. Create one to get started.</div>
       )}
 
       {strategies.map(s => (
-        <div key={s.id} className="bg-zinc-800 border border-zinc-700 rounded-xl p-5 space-y-3">
+        <div key={s.id} className="rounded-xl p-5 space-y-3" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold text-white">{s.name}</h2>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${s.isActive ? 'bg-green-500/20 text-green-400' : 'bg-zinc-600/30 text-zinc-400'}`}>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{s.name}</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: s.isActive ? 'var(--green-muted)' : 'var(--bg-hover)', color: s.isActive ? 'var(--green)' : 'var(--text-muted)' }}>
                 {s.isActive ? 'Active' : 'Inactive'}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => handleToggle(s.id, s.isActive)}
-                className={`p-2 rounded-lg text-sm ${s.isActive ? 'bg-orange-600/20 text-orange-400 hover:bg-orange-600/30' : 'bg-green-600/20 text-green-400 hover:bg-green-600/30'}`}
+                className="p-2 rounded-lg text-sm"
+                style={{ backgroundColor: s.isActive ? 'rgba(249,115,22,0.15)' : 'var(--green-muted)', color: s.isActive ? '#f97316' : 'var(--green)' }}
                 title={s.isActive ? 'Deactivate' : 'Activate'}>
                 {s.isActive ? <PowerOff size={16} /> : <Power size={16} />}
               </button>
               <button onClick={() => handleDelete(s.id)}
-                className="p-2 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30">
+                className="p-2 rounded-lg" style={{ backgroundColor: 'var(--red-muted)', color: 'var(--red)' }}>
                 <Trash2 size={16} />
               </button>
             </div>
           </div>
 
           {/* Conditions summary */}
-          <div className="text-xs text-zinc-400 space-y-1">
-            <div className="font-semibold text-zinc-300">Conditions:</div>
+          <div className="text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
+            <div className="font-semibold" style={{ color: 'var(--text-secondary)' }}>Conditions:</div>
             {(s.conditions || []).map((c, i) => (
               <div key={i} className="pl-3">
                 {c.type === 'indicator' && `${c.parameter} ${c.operator} ${c.value}`}
@@ -308,7 +317,7 @@ export default function StrategyPage() {
                 {c.type === 'time' && `Hour (UTC) ${c.operator} ${c.value}`}
               </div>
             ))}
-            <div className="font-semibold text-zinc-300 mt-1">Actions:</div>
+            <div className="font-semibold mt-1" style={{ color: 'var(--text-secondary)' }}>Actions:</div>
             {(s.actions || []).map((a, i) => (
               <div key={i} className="pl-3">
                 {a.type === 'buy' && `Buy ${a.quantity}`}
@@ -320,13 +329,13 @@ export default function StrategyPage() {
           </div>
 
           {/* Backtest controls */}
-          <div className="flex items-center gap-2 pt-2 border-t border-zinc-700">
+          <div className="flex items-center gap-2 pt-2" style={{ borderTop: '1px solid var(--border-primary)' }}>
             <select value={btSymbol} onChange={e => setBtSymbol(e.target.value)}
-              className="bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-white text-xs">
+              className="rounded px-2 py-1 text-xs" style={inputStyle}>
               {SYMBOLS.map(sym => <option key={sym} value={sym}>{sym.replace('USDT', '/USDT')}</option>)}
             </select>
             <select value={btDays} onChange={e => setBtDays(Number(e.target.value))}
-              className="bg-zinc-900 border border-zinc-600 rounded px-2 py-1 text-white text-xs">
+              className="rounded px-2 py-1 text-xs" style={inputStyle}>
               <option value={30}>30 days</option>
               <option value={90}>90 days</option>
               <option value={180}>180 days</option>
@@ -334,7 +343,8 @@ export default function StrategyPage() {
             </select>
             <button onClick={() => handleBacktest(s.id)}
               disabled={backtesting === s.id}
-              className="flex items-center gap-1 px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-600 text-white rounded-lg text-xs">
+              className="flex items-center gap-1 px-3 py-1 text-white rounded-lg text-xs disabled:opacity-50"
+              style={{ backgroundColor: 'var(--accent)' }}>
               <Play size={12} /> {backtesting === s.id ? 'Running...' : 'Backtest'}
             </button>
           </div>
@@ -358,16 +368,16 @@ function BacktestResults({ result }) {
   if (!r) return null;
 
   return (
-    <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4 space-y-2">
-      <h4 className="text-sm font-semibold text-zinc-300">Backtest Results</h4>
+    <div className="rounded-lg p-4 space-y-2" style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
+      <h4 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Backtest Results</h4>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
         <Stat label="Total Return" value={`${r.totalReturn >= 0 ? '+' : ''}${r.totalReturn}%`}
-          color={r.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'} />
-        <Stat label="Win Rate" value={`${r.winRate}%`} color="text-blue-400" />
-        <Stat label="Max Drawdown" value={`${r.maxDrawdown}%`} color="text-orange-400" />
-        <Stat label="Sharpe Ratio" value={r.sharpeRatio} color="text-purple-400" />
-        <Stat label="Final Balance" value={`$${Number(r.finalBalance || 0).toLocaleString()}`} color="text-white" />
-        <Stat label="Total Trades" value={r.totalTrades} color="text-zinc-300" />
+          color={r.totalReturn >= 0 ? 'var(--green)' : 'var(--red)'} />
+        <Stat label="Win Rate" value={`${r.winRate}%`} color="var(--accent-text)" />
+        <Stat label="Max Drawdown" value={`${r.maxDrawdown}%`} color="#f97316" />
+        <Stat label="Sharpe Ratio" value={r.sharpeRatio} color="var(--accent)" />
+        <Stat label="Final Balance" value={`$${Number(r.finalBalance || 0).toLocaleString()}`} color="var(--text-primary)" />
+        <Stat label="Total Trades" value={r.totalTrades} color="var(--text-secondary)" />
       </div>
     </div>
   );
@@ -376,8 +386,8 @@ function BacktestResults({ result }) {
 function Stat({ label, value, color }) {
   return (
     <div>
-      <div className="text-zinc-500">{label}</div>
-      <div className={`font-semibold ${color}`}>{value}</div>
+      <div style={{ color: 'var(--text-muted)' }}>{label}</div>
+      <div className="font-semibold" style={{ color }}>{value}</div>
     </div>
   );
 }

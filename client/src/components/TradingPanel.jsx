@@ -144,8 +144,8 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
 
   return (
     <>
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-3">
-        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Order Panel</div>
+      <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+        <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Order Panel</div>
         <div className="flex gap-1 mb-3">
           {['BUY', 'LIMIT', 'SELL'].map(tab => (
             <button key={tab} onClick={() => setOrderTab(tab)}
@@ -188,7 +188,7 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
             type="number"
             value={orderAmount}
             onChange={e => setOrderAmount(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500"
+            className="w-full rounded px-2 py-1.5 text-xs outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
           />
         </div>
 
@@ -199,7 +199,7 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
               type="number"
               value={orderPrice}
               onChange={e => setOrderPrice(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-xs text-white outline-none focus:border-blue-500"
+              className="w-full rounded px-2 py-1.5 text-xs outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
             />
           </div>
         )}
@@ -216,7 +216,7 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
         </div>
 
         {orderMessage && (
-          <div className="text-[10px] text-slate-400 bg-slate-900 border border-slate-800 rounded px-2 py-1 mb-2">
+          <div className="text-[10px] rounded px-2 py-1 mb-2" style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
             {orderMessage}
           </div>
         )}
@@ -230,12 +230,12 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
         </button>
       </div>
 
-      <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-3">
-        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Limit Orders</div>
+      <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
+        <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Limit Orders</div>
         {limitOrders.length === 0 ? (
           <div className="text-[10px] text-slate-600">No open orders</div>
         ) : limitOrders.map(order => (
-          <div key={order.id} className="flex items-center justify-between py-1.5 border-b border-slate-800 last:border-0">
+          <div key={order.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
             <div>
               <div className={`text-[10px] font-bold ${order.type === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
                 {String(order.type).toUpperCase()} {order.symbol?.replace('USDT', '')} @ ${formatMoney(order.targetPrice)}
@@ -244,7 +244,7 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
             </div>
             <button
               onClick={() => cancelLimitOrder(order.id)}
-              className="text-[10px] px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-400 transition"
+              className="text-[10px] px-2 py-0.5 rounded transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-muted)' }}
             >
               Cancel
             </button>

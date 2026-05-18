@@ -4,7 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>FinScope</title>
+    <script>
+      // Prevent flash of wrong theme on page load
+      (function () {
+        var theme = localStorage.getItem('finscope-theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        if (theme === 'dark') {
+          document.documentElement.style.backgroundColor = '#08090a';
+          document.documentElement.style.colorScheme = 'dark';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

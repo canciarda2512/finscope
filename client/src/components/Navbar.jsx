@@ -1,22 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/Authcontext';
+import { useTheme } from '../context/ThemeContext';
 import {
-  TrendingUp,
-  User,
-  LogOut,
-  Bell,
-  Search,
-  Zap,
-  TrendingUp as TradeIcon,
-  Settings,
-  CheckCheck,
-  X,
+  TrendingUp, User, LogOut, Bell, Zap, Settings, CheckCheck, X,
+  BarChart3, Eye, ListFilter, Cpu, LayoutGrid, Sun, Moon,
 } from 'lucide-react';
 import APIClient from '../services/APIClient';
 import TokenManager from '../services/TokenManager';
 
-// ── Relative time helper ──
 function relativeTime(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -27,68 +19,33 @@ function relativeTime(dateStr) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-// ── Notification type display config ──
 const TYPE_CONFIG = {
-  trade_executed: {
-    icon: <TradeIcon size={13} />,
-    color: 'text-blue-400',
-    ring: 'bg-blue-500/15 ring-blue-500/20',
-  },
-  limit_order_triggered: {
-    icon: <Zap size={13} />,
-    color: 'text-amber-400',
-    ring: 'bg-amber-500/15 ring-amber-500/20',
-  },
-  limit_order_created: {
-    icon: <Zap size={13} />,
-    color: 'text-cyan-400',
-    ring: 'bg-cyan-500/15 ring-cyan-500/20',
-  },
-  price_alert_triggered: {
-    icon: <Bell size={13} />,
-    color: 'text-red-400',
-    ring: 'bg-red-500/15 ring-red-500/20',
-  },
-  strategy_event: {
-    icon: <Settings size={13} />,
-    color: 'text-purple-400',
-    ring: 'bg-purple-500/15 ring-purple-500/20',
-  },
+  trade_executed: { icon: <TrendingUp size={12} />, color: 'var(--accent-text)', bg: 'var(--accent-muted)' },
+  limit_order_triggered: { icon: <Zap size={12} />, color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  limit_order_created: { icon: <Zap size={12} />, color: '#06b6d4', bg: 'rgba(6,182,212,0.15)' },
+  price_alert_triggered: { icon: <Bell size={12} />, color: 'var(--red)', bg: 'var(--red-muted)' },
+  strategy_event: { icon: <Settings size={12} />, color: 'var(--accent-text)', bg: 'var(--accent-muted)' },
 };
 
 function typeConfig(type) {
-  return TYPE_CONFIG[type] ?? {
-    icon: <Bell size={13} />,
-    color: 'text-slate-400',
-    ring: 'bg-slate-500/15 ring-slate-500/20',
-  };
+  return TYPE_CONFIG[type] ?? { icon: <Bell size={12} />, color: 'var(--text-muted)', bg: 'var(--bg-hover)' };
 }
 
-// ── Notification Dropdown ──
 function NotificationDropdown({ onClose }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-
     const load = async () => {
       try {
         const res = await APIClient.get('/notifications');
         if (cancelled) return;
         setNotifications(res.data.notifications || []);
-
-        // Mark all as read when dropdown opens
-        if ((res.data.unreadCount ?? 0) > 0) {
-          APIClient.put('/notifications/read-all').catch(() => {});
-        }
-      } catch (_) {
-        if (!cancelled) setNotifications([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+        if ((res.data.unreadCount ?? 0) > 0) APIClient.put('/notifications/read-all').catch(() => {});
+      } catch (_) { if (!cancelled) setNotifications([]); }
+      finally { if (!cancelled) setLoading(false); }
     };
-
     load();
     return () => { cancelled = true; };
   }, []);
@@ -97,87 +54,54 @@ function NotificationDropdown({ onClose }) {
     const onNew = (event) => {
       const notification = event.detail?.notification;
       if (!notification?.id) return;
-
       setNotifications(prev => {
         if (prev.some(item => item.id === notification.id)) return prev;
         return [notification, ...prev];
       });
-
       APIClient.put('/notifications/read-all').catch(() => {});
     };
-
     window.addEventListener('notification:new', onNew);
     return () => window.removeEventListener('notification:new', onNew);
   }, []);
 
   return (
-    <div className="flex flex-col" style={{ maxHeight: '480px' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-        <span className="text-white font-bold text-sm">Notifications</span>
-        <button
-          onClick={onClose}
-          className="p-1 rounded text-slate-500 hover:text-white hover:bg-slate-800 transition"
-        >
-          <X size={14} />
-        </button>
+    <div className="flex flex-col" style={{ maxHeight: '420px' }}>
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid var(--border-primary)' }}>
+        <span className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>Notifications</span>
+        <button onClick={onClose} className="p-1 rounded transition" style={{ color: 'var(--text-muted)' }}><X size={13} /></button>
       </div>
-
-      {/* List */}
       <div className="overflow-y-auto flex-1">
         {loading ? (
-          <div className="px-4 py-10 text-center text-slate-600 text-xs animate-pulse">
-            Loading...
-          </div>
+          <div className="px-4 py-8 text-center text-xs animate-pulse" style={{ color: 'var(--text-dim)' }}>Loading...</div>
         ) : notifications.length === 0 ? (
-          <div className="px-4 py-10 text-center">
-            <Bell size={24} className="text-slate-700 mx-auto mb-2" />
-            <p className="text-slate-600 text-xs">No notifications yet</p>
-            <p className="text-slate-700 text-[10px] mt-1">
-              Trade executions and limit order fills will appear here
-            </p>
+          <div className="px-4 py-8 text-center">
+            <Bell size={20} className="mx-auto mb-2" style={{ color: 'var(--text-dim)' }} />
+            <p className="text-xs" style={{ color: 'var(--text-dim)' }}>No notifications yet</p>
           </div>
         ) : notifications.map(notif => {
           const cfg = typeConfig(notif.type);
           const unread = Number(notif.isRead) === 0;
           return (
-            <div
-              key={notif.id}
-              className={`flex gap-3 px-4 py-3 border-b border-slate-800/60 last:border-0 transition
-                ${unread ? 'bg-slate-800/20' : 'hover:bg-slate-800/10'}`}
-            >
-              {/* Type icon */}
-              <div className={`flex-shrink-0 mt-0.5 w-6 h-6 rounded-full ring-1 flex items-center justify-center ${cfg.ring}`}>
-                <span className={cfg.color}>{cfg.icon}</span>
+            <div key={notif.id} className="flex gap-2.5 px-4 py-2.5 last:border-0 transition"
+              style={{ borderBottom: '1px solid var(--border-primary)', backgroundColor: unread ? 'var(--bg-hover)' : 'transparent' }}>
+              <div className="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: cfg.bg }}>
+                <span style={{ color: cfg.color }}>{cfg.icon}</span>
               </div>
-
-              {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <span className={`text-[11px] font-bold leading-tight ${unread ? 'text-white' : 'text-slate-300'}`}>
-                    {notif.title}
-                  </span>
-                  {unread && (
-                    <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-blue-500 mt-1" />
-                  )}
+                  <span className="text-[11px] font-semibold leading-tight" style={{ color: unread ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{notif.title}</span>
+                  {unread && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full mt-1" style={{ backgroundColor: 'var(--accent)' }} />}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-0.5 leading-snug truncate">
-                  {notif.message}
-                </p>
-                <span className="text-[10px] text-slate-600 mt-1 block">
-                  {relativeTime(notif.createdAt)}
-                </span>
+                <p className="text-[10px] mt-0.5 leading-snug truncate" style={{ color: 'var(--text-muted)' }}>{notif.message}</p>
+                <span className="text-[9px] mt-0.5 block" style={{ color: 'var(--text-dim)' }}>{relativeTime(notif.createdAt)}</span>
               </div>
             </div>
           );
         })}
       </div>
-
-      {/* Footer */}
       {notifications.length > 0 && (
-        <div className="px-4 py-2 border-t border-slate-800 flex items-center gap-1 text-[10px] text-slate-600">
-          <CheckCheck size={11} />
-          <span>All marked as read on open</span>
+        <div className="px-4 py-2 flex items-center gap-1 text-[9px]" style={{ borderTop: '1px solid var(--border-primary)', color: 'var(--text-dim)' }}>
+          <CheckCheck size={10} /> All marked as read on open
         </div>
       )}
     </div>
@@ -186,192 +110,142 @@ function NotificationDropdown({ onClose }) {
 
 export default function Navbar() {
   const { user, logout, isAuthenticated } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const bellRef = useRef(null);
   const dropdownRef = useRef(null);
 
-  // ── Poll unread count every 30 sec ──
   useEffect(() => {
-    if (!isAuthenticated) {
-      setUnreadCount(0);
-      return;
-    }
-
+    if (!isAuthenticated) { setUnreadCount(0); return; }
     let cancelled = false;
     const fetchCount = async () => {
       try {
         const res = await APIClient.get('/notifications/count');
         if (!cancelled) setUnreadCount(res.data.unreadCount ?? 0);
-      } catch (err) {
-        console.error('[Navbar] Failed to fetch notification count:', err?.response?.status, err?.message);
-      }
+      } catch (_) {}
     };
-
     fetchCount();
     const id = setInterval(fetchCount, 30000);
-
-    // Immediate refresh when a notification is created (dispatched by trade handlers)
     const onNew = () => { if (!cancelled) fetchCount(); };
     window.addEventListener('notification:new', onNew);
-
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-      window.removeEventListener('notification:new', onNew);
-    };
+    return () => { cancelled = true; clearInterval(id); window.removeEventListener('notification:new', onNew); };
   }, [isAuthenticated]);
 
-  // Live notification push channel. Badge polling remains as a fallback.
   useEffect(() => {
     if (!isAuthenticated) return undefined;
-
     const token = TokenManager.getAccessToken();
     if (!token) return undefined;
-
     const socket = new WebSocket(`ws://localhost:4000?token=${encodeURIComponent(token)}`);
-
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type !== 'notification:new') return;
-
         setUnreadCount(count => count + 1);
-        window.dispatchEvent(new CustomEvent('notification:new', {
-          detail: { notification: msg.notification },
-        }));
-      } catch (err) {
-        console.warn('[Navbar] Notification WS parse error:', err);
-      }
+        window.dispatchEvent(new CustomEvent('notification:new', { detail: { notification: msg.notification } }));
+      } catch (_) {}
     };
-
-    socket.onerror = (err) => {
-      console.warn('[Navbar] Notification WebSocket error:', err);
-    };
-
     return () => socket.close();
   }, [isAuthenticated]);
 
-  // ── Reset badge when dropdown opens ──
   const handleBellClick = () => {
-    if (!dropdownOpen) {
-      setUnreadCount(0);
-      setDropdownOpen(true);
-    } else {
-      setDropdownOpen(false);
-    }
+    if (!dropdownOpen) { setUnreadCount(0); setDropdownOpen(true); }
+    else setDropdownOpen(false);
   };
 
-  // ── Click outside to close ──
   useEffect(() => {
     if (!dropdownOpen) return;
     const onMouseDown = (e) => {
-      if (
-        dropdownRef.current && !dropdownRef.current.contains(e.target) &&
-        bellRef.current && !bellRef.current.contains(e.target)
-      ) {
-        setDropdownOpen(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target) && bellRef.current && !bellRef.current.contains(e.target)) setDropdownOpen(false);
     };
     const onKey = (e) => { if (e.key === 'Escape') setDropdownOpen(false); };
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => { document.removeEventListener('mousedown', onMouseDown); document.removeEventListener('keydown', onKey); };
   }, [dropdownOpen]);
 
-  const navLinkClass = ({ isActive }) =>
-    `text-sm font-medium transition-all pb-2 border-b-2 flex items-center gap-2 ${
-      isActive
-        ? 'text-blue-500 border-blue-500'
-        : 'text-slate-400 border-transparent hover:text-slate-200'
-    }`;
-
-  const authLinkClass = ({ isActive }) =>
-    `px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${
-      isActive
-        ? 'bg-blue-600 text-white'
-        : 'text-slate-300 hover:text-white hover:bg-slate-800'
-    }`;
-
   return (
-    <nav className="bg-[#0f172a] border-b border-slate-800 px-6 py-3 flex items-center justify-between sticky top-0 z-[100] shadow-md">
+    <nav className="px-4 py-0 flex items-center justify-between sticky top-0 z-[100] h-11"
+      style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
 
-      {/* LEFT: Logo + Nav links */}
-      <div className="flex items-center gap-10">
-        <Link to="/" className="flex items-center gap-2 group">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-500 transition-colors shadow-lg shadow-blue-900/20">
-            <TrendingUp size={20} className="text-white" />
+      {/* LEFT */}
+      <div className="flex items-center gap-1">
+        <Link to="/" className="flex items-center gap-1.5 mr-4 group">
+          <div className="w-6 h-6 rounded flex items-center justify-center transition-colors" style={{ backgroundColor: 'var(--accent)' }}>
+            <TrendingUp size={14} className="text-white" />
           </div>
-          <span className="text-white font-bold text-xl tracking-tighter italic">FinScope</span>
+          <span className="font-bold text-sm tracking-tight" style={{ color: 'var(--text-primary)' }}>FinScope</span>
         </Link>
 
-        {isAuthenticated && (
-          <div className="hidden lg:flex gap-6 items-center mt-1">
-            <NavLink to="/" className={navLinkClass}>Chart</NavLink>
-            <NavLink to="/portfolio" className={navLinkClass}>Portfolio</NavLink>
-            <NavLink to="/watchlist" className={navLinkClass}>Watchlist</NavLink>
-            <NavLink to="/screener" className={navLinkClass}>Screener</NavLink>
-            <NavLink to="/strategy" className={navLinkClass}>Strategy</NavLink>
-            <NavLink to="/multi-chart" className={navLinkClass}>Multi-chart</NavLink>
-          </div>
-        )}
+        <div className="hidden md:flex items-center gap-0.5">
+          {[
+            { to: '/', icon: <BarChart3 size={13} />, label: 'Chart', end: true, alwaysShow: true },
+            { to: '/portfolio', icon: <TrendingUp size={13} />, label: 'Portfolio' },
+            { to: '/watchlist', icon: <Eye size={13} />, label: 'Watchlist' },
+            { to: '/screener', icon: <ListFilter size={13} />, label: 'Screener' },
+            { to: '/strategy', icon: <Cpu size={13} />, label: 'Strategy' },
+            { to: '/multi-chart', icon: <LayoutGrid size={13} />, label: 'Multi-Chart' },
+          ].filter(item => item.alwaysShow || isAuthenticated).map(item => (
+            <NavLink key={item.to} to={item.to} end={item.end}
+              className={({ isActive }) =>
+                `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold tracking-wide transition-all`}
+              style={({ isActive }) => ({
+                backgroundColor: isActive ? 'var(--accent-muted)' : 'transparent',
+                color: isActive ? 'var(--accent-text)' : 'var(--text-muted)',
+              })}>
+              {item.icon} {item.label}
+            </NavLink>
+          ))}
+        </div>
       </div>
 
       {/* RIGHT */}
-      <div className="flex items-center gap-5">
-        <div className="hidden md:flex items-center gap-4 text-slate-400 mr-2 border-r border-slate-700 pr-5">
-          <Search size={18} className="hover:text-white cursor-pointer transition-colors" />
+      <div className="flex items-center gap-2">
+        {/* Theme toggle */}
+        <button onClick={toggleTheme} className="p-1.5 rounded-md transition"
+          style={{ color: 'var(--text-muted)' }}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
 
-          {/* ── Notification Bell ── */}
+        {isAuthenticated && (
           <div className="relative">
-            <button
-              ref={bellRef}
-              onClick={isAuthenticated ? handleBellClick : undefined}
-              className="relative p-1 text-slate-400 hover:text-white transition-colors"
-              title="Notifications"
-            >
-              <Bell size={18} />
-              {isAuthenticated && unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white leading-none">
+            <button ref={bellRef} onClick={handleBellClick} className="relative p-1.5 rounded-md transition"
+              style={{ color: 'var(--text-muted)' }} title="Notifications">
+              <Bell size={15} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-[0.875rem] items-center justify-center rounded-full px-0.5 text-[8px] font-bold text-white leading-none"
+                  style={{ backgroundColor: 'var(--red)' }}>
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </span>
               )}
             </button>
-
-            {/* Dropdown */}
-            {dropdownOpen && isAuthenticated && (
-              <div
-                ref={dropdownRef}
-                className="absolute right-0 top-full mt-2 w-80 bg-[#0f172a] border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-[200]"
-              >
+            {dropdownOpen && (
+              <div ref={dropdownRef} className="absolute right-0 top-full mt-1 w-72 rounded-lg shadow-2xl overflow-hidden z-[200]"
+                style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
                 <NotificationDropdown onClose={() => setDropdownOpen(false)} />
               </div>
             )}
           </div>
-        </div>
+        )}
 
         {isAuthenticated ? (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-full shadow-inner">
-              <User size={14} className="text-blue-400" />
-              <span className="text-slate-200 text-xs font-semibold">
-                @{user?.username || 'user'}
-              </span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md"
+              style={{ backgroundColor: 'var(--accent-muted)', border: '1px solid var(--accent-ring)' }}>
+              <User size={12} style={{ color: 'var(--accent-text)' }} />
+              <span className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>@{user?.username || 'user'}</span>
             </div>
-            <button
-              onClick={logout}
-              className="p-2 text-slate-500 hover:text-red-400 transition-all hover:scale-110"
-            >
-              <LogOut size={18} />
+            <button onClick={logout} className="p-1.5 rounded-md transition" style={{ color: 'var(--text-dim)' }} title="Sign out">
+              <LogOut size={14} />
             </button>
           </div>
         ) : (
-          <div className="flex gap-2">
-            <NavLink to="/login" className={authLinkClass}>Login</NavLink>
-            <NavLink to="/register" className={authLinkClass}>Register</NavLink>
+          <div className="flex items-center gap-2">
+            <NavLink to="/login" className="px-3 py-1 text-[11px] font-semibold rounded-md transition"
+              style={{ color: 'var(--text-muted)' }}>Sign In</NavLink>
+            <NavLink to="/register" className="px-3 py-1 text-[11px] font-semibold text-white rounded-md transition"
+              style={{ backgroundColor: 'var(--accent)' }}>Sign Up Free</NavLink>
           </div>
         )}
       </div>

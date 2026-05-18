@@ -22,9 +22,15 @@ export const client = createClient({
 
 // ── Veritabanını oluştur ──
 async function createDatabase() {
-  await client.exec({
+  const initClient = createClient({
+    url: `http://${process.env.CLICKHOUSE_HOST || 'localhost'}:${process.env.CLICKHOUSE_PORT || 8123}`,
+    username: process.env.CLICKHOUSE_USER || 'default',
+    password: process.env.CLICKHOUSE_PASSWORD || '',
+  });
+  await initClient.exec({
     query: `CREATE DATABASE IF NOT EXISTS ${process.env.CLICKHOUSE_DATABASE || 'finscope'}`
   });
+  await initClient.close();
 }
 
 // ── Migrationları çalıştır ──
