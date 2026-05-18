@@ -35,10 +35,15 @@ const TF_INTERVAL = {
 const TF_LIMIT = {
   '1m': 100,
   '5m': 200,
-  '1D': 150,
-  '1W': 70,
-  '1M': 30,
+  '1D': 365,
+  '1W': 104,
+  '1M': 36,
 };
+
+// 1D / 1W / 1M → market_data_daily (1 yıllık günlük bar)
+// 1m / 5m      → market_data       (30 günlük 1m bar)
+const DAILY_TF = new Set(['1D', '1W', '1M']);
+const tableFor = tf => DAILY_TF.has(tf) ? 'market_data_daily' : 'market_data';
 
 // ── Validation helper ──
 function validateParams(symbol, timeframe, res) {
@@ -82,7 +87,7 @@ router.get('/candles', async (req, res) => {
         min(low)                     AS low,
         argMax(close,  timestamp)    AS close,
         sum(volume)                  AS volume
-      FROM market_data
+      FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
@@ -141,7 +146,7 @@ router.get('/indicators', async (req, res) => {
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data
+      FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time ASC
@@ -320,7 +325,7 @@ router.post('/predict', authMiddleware, async (req, res) => {
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data
+      FROM market_data_daily
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
@@ -400,7 +405,7 @@ router.post('/anomalies', authMiddleware, async (req, res) => {
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data
+      FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC

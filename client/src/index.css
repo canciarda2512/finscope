@@ -24,3 +24,15 @@ html:not(.dark) .bg-\[\#0f172a\] { background-color: #ffffff; }
 
 /* text-white on light backgrounds must be dark */
 html:not(.dark) .text-white { color: #1e293b; }
+
+/* ── Ticker strip animation ── */
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-ticker {
+  animation: ticker 30s linear infinite;
+}
+.animate-ticker:hover {
+  animation-play-state: paused;
+}

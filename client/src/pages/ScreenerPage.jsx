@@ -160,7 +160,7 @@ export default function ScreenerPage() {
                 <th className="px-6 py-4 font-bold">Symbol</th>
                 <th className="px-6 py-4 font-bold">Current Price</th>
                 <th className="px-6 py-4 font-bold">24h % Change</th>
-                <th className="px-6 py-4 font-bold">Volume</th>
+                <th className="px-6 py-4 font-bold">Volume (USDT, 24h)</th>
                 {showRsi && <th className="px-6 py-4 font-bold">RSI</th>}
                 <th className="px-6 py-4 font-bold text-right">View</th>
               </tr>

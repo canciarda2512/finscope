@@ -3,22 +3,27 @@ import { AuthProvider, useAuth } from './context/Authcontext';
 import { ThemeProvider } from './context/ThemeContext';
 import Navbar from './components/Navbar';
 import ChartPage from './pages/ChartPage';
-import PortfolioPage from './pages/PortfolioPage'; // Orijinal sayfan
-import WatchlistPage from './pages/WatchlistPage'; // Orijinal sayfan
-import ScreenerPage from './pages/ScreenerPage';   // Yeni oluşturduğumuz sayfa
+import LandingPage from './pages/LandingPage';
+import PortfolioPage from './pages/PortfolioPage';
+import WatchlistPage from './pages/WatchlistPage';
+import ScreenerPage from './pages/ScreenerPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import MultiChartPage from './pages/MultiChartPage';
 import StrategyPage from './pages/StrategyPage';
+import ProfilePage from './pages/ProfilePage';
 
+// "/" → LandingPage (misafir) veya ChartPage (giriş yapmış)
+const HomeRoute = () => {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return <div className="bg-[#020617] min-h-screen" />;
+  return isAuthenticated ? <ChartPage /> : <LandingPage />;
+};
 
-// Korumalı rota bileşeni
+// Korumalı rota: giriş yapılmamışsa login'e yönlendir
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
-  
-  // Auth yüklenirken boş ekran vererek sıçramayı önle
-  if (loading) return <div className="bg-[#020617] min-h-screen"></div>;
-  
+  if (loading) return <div className="bg-[#020617] min-h-screen" />;
   return isAuthenticated ? children : <Navigate to="/login" />;
 };
 
@@ -27,47 +32,30 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ThemeProvider>
-        <div className="flex flex-col min-h-screen bg-[#020617]">
-          {/* Navbar artık AuthProvider içinde olduğu için user verilerini çeker */}
-          <Navbar />
-          
-          <main className="flex-grow">
-            <Routes>
-              {/* Herkese Açık */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
+          <div className="flex flex-col min-h-screen bg-[#020617]">
+            <Navbar />
+            <main className="flex-grow">
+              <Routes>
+                {/* Ana sayfa: misafir → Landing, kullanıcı → Chart */}
+                <Route path="/" element={<HomeRoute />} />
 
-              {/* Sadece Giriş Yapanlara Özel (Korumalı) */}
-              <Route 
-                path="/" 
-                element={<ProtectedRoute><ChartPage /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/portfolio" 
-                element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/watchlist" 
-                element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/screener" 
-                element={<ProtectedRoute><ScreenerPage /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/strategy" 
-                element={<ProtectedRoute><StrategyPage /></ProtectedRoute>} 
-              />
-              <Route 
-                path="/multi-chart" 
-                element={<ProtectedRoute><MultiChartPage /></ProtectedRoute>} 
-              />
+                {/* Herkese açık (misafir + kullanıcı) */}
+                <Route path="/login"    element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/chart"    element={<ChartPage />} />
 
-              {/* Hatalı linkleri ana sayfaya yolla */}
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </main>
-        </div>
+                {/* Korumalı sayfalar */}
+                <Route path="/portfolio"  element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
+                <Route path="/watchlist"  element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
+                <Route path="/screener"   element={<ProtectedRoute><ScreenerPage /></ProtectedRoute>} />
+                <Route path="/strategy"   element={<ProtectedRoute><StrategyPage /></ProtectedRoute>} />
+                <Route path="/multi-chart" element={<ProtectedRoute><MultiChartPage /></ProtectedRoute>} />
+                <Route path="/profile"    element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+
+                <Route path="*" element={<Navigate to="/" />} />
+              </Routes>
+            </main>
+          </div>
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>

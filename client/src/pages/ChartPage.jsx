@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import APIClient from '../services/APIClient';
 import {
-  MousePointer2, Minus, PencilLine, Brain, AlertTriangle, TrendingUp, X,
+  MousePointer2, Minus, PencilLine, Brain, AlertTriangle, TrendingUp, X, Lock,
 } from 'lucide-react';
 import ChartView from '../components/ChartView';
 import AlertPanel from '../components/AlertPanel';
 import TradingPanel from '../components/TradingPanel';
+import { useAuth } from '../context/Authcontext';
 
 const TIMEFRAMES = ['1m', '5m', '1D', '1W', '1M'];
 const INDICATORS = ['SMA', 'EMA', 'RSI', 'MACD', 'BB'];
@@ -19,6 +20,7 @@ const AVAILABLE_SYMBOLS = [
 ];
 
 export default function ChartPage() {
+  const { isAuthenticated } = useAuth();
   const [searchParams] = useSearchParams();
   const initialSymbol = searchParams.get('symbol')?.toUpperCase();
   const [candles, setCandles] = useState([]);
@@ -204,7 +206,7 @@ export default function ChartPage() {
         setAiResult(res.data);
       }
     } catch (err) {
-      setAiError('AI servisi yanit vermedi. Lutfen tekrar deneyin.');
+      setAiError('AI service did not respond. Please try again.');
       console.error('AI prediction error:', err);
     } finally {
       setAiLoading(false);
@@ -234,7 +236,7 @@ export default function ChartPage() {
         setAnomalyActive(true);
       }
     } catch (err) {
-      setAnomalyError('Anomali servisi yanit vermedi.');
+      setAnomalyError('Anomaly service did not respond.');
       console.error('Anomaly detection error:', err);
     } finally {
       setAnomalyLoading(false);
@@ -253,7 +255,7 @@ export default function ChartPage() {
           <select
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
-            className="bg-[#0f172a] border border-slate-700 text-white text-sm font-bold rounded px-2 py-1 outline-none focus:border-blue-500"
+            className="bg-[#0f172a] border border-slate-700 text-slate-300 text-sm font-bold rounded px-2 py-1 outline-none focus:border-blue-500"
           >
             {AVAILABLE_SYMBOLS.map(s => (
               <option key={s} value={s}>{s.replace('USDT', '/USDT')}</option>
@@ -309,47 +311,60 @@ export default function ChartPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleAIPrediction}
-            disabled={aiLoading}
-            title="AI tabanli trend tahmini"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
-              ${aiResult
-                ? 'bg-purple-700 text-white ring-1 ring-purple-400'
-                : 'bg-purple-950 border border-purple-700 text-purple-300 hover:bg-purple-900'
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            <Brain size={13} />
-            {aiLoading
-              ? 'Tahmin ediliyor...'
-              : aiResult
-                ? `${aiResult.direction === 'UP' ? 'UP' : 'DOWN'} (${aiResult.confidence}%)`
-                : 'AI Prediction'}
-          </button>
+          {isAuthenticated ? (
+            <>
+              <button
+                onClick={handleAIPrediction}
+                disabled={aiLoading}
+                title="AI tabanli trend tahmini"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
+                  ${aiResult
+                    ? 'bg-purple-700 text-white ring-1 ring-purple-400'
+                    : 'bg-purple-950 border border-purple-700 text-purple-300 hover:bg-purple-900'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <Brain size={13} />
+                {aiLoading
+                  ? 'Tahmin ediliyor...'
+                  : aiResult
+                    ? `${aiResult.direction === 'UP' ? 'UP' : 'DOWN'} (${aiResult.confidence}%)`
+                    : 'AI Prediction'}
+              </button>
 
-          <button
-            onClick={handleAnomalyDetection}
-            disabled={anomalyLoading}
-            title="Volume spike ve fiyat anomalisi tespiti"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
-              ${anomalyActive
-                ? 'bg-orange-600 text-white ring-1 ring-orange-400'
-                : 'bg-orange-950 border border-orange-700 text-orange-300 hover:bg-orange-900'
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            <AlertTriangle size={13} />
-            {anomalyLoading
-              ? 'Analiz ediliyor...'
-              : anomalyActive
-                ? `${anomalies.length} anomali`
-                : 'Anomaly Detection'}
-          </button>
+              <button
+                onClick={handleAnomalyDetection}
+                disabled={anomalyLoading}
+                title="Volume spike ve fiyat anomalisi tespiti"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition
+                  ${anomalyActive
+                    ? 'bg-orange-600 text-white ring-1 ring-orange-400'
+                    : 'bg-orange-950 border border-orange-700 text-orange-300 hover:bg-orange-900'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <AlertTriangle size={13} />
+                {anomalyLoading
+                  ? 'Analiz ediliyor...'
+                  : anomalyActive
+                    ? `${anomalies.length} anomali`
+                    : 'Anomaly Detection'}
+              </button>
+            </>
+          ) : (
+            <Link
+              to="/login"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold
+                bg-slate-800 border border-slate-700 text-slate-500 hover:border-blue-500/50 hover:text-blue-400 transition"
+              title="Sign in to use AI features"
+            >
+              <Lock size={12} /> AI Features
+            </Link>
+          )}
         </div>
       </div>
 
       {activeTool === 'tline' && (
         <div className="mb-3 text-[11px] text-cyan-400 bg-cyan-950 border border-cyan-800 rounded px-3 py-1.5 w-fit">
-          Grafik uzerinde birinci noktaya tiklayin
+          Click on the first point on the chart, then click on the second point to draw a trendline. You can adjust or delete it later.
         </div>
       )}
 
@@ -445,21 +460,19 @@ export default function ChartPage() {
 
       <div className="flex gap-4">
         <div className="flex-1 min-w-0">
-          <div className="bg-[#0f172a] rounded-xl border border-slate-800 p-2">
-            <ChartView
-              key={`${symbol}-${timeframe}`}
-              candles={candles}
-              liveCandle={liveCandle}
-              timeframe={timeframe}
-              activeTool={activeTool}
-              aiPrediction={aiResult}
-              anomalies={anomalyActive ? anomalies : []}
-              indicators={activeIndicators}
-              savedDrawings={drawings}
-              onPriceSelect={price => setSelectedOrderPrice(price?.toFixed(2) || '')}
-              onDrawingCreated={handleDrawingCreated}
-            />
-          </div>
+          <ChartView
+            key={`${symbol}-${timeframe}`}
+            candles={candles}
+            liveCandle={liveCandle}
+            timeframe={timeframe}
+            activeTool={activeTool}
+            aiPrediction={aiResult}
+            anomalies={anomalyActive ? anomalies : []}
+            indicators={activeIndicators}
+            savedDrawings={drawings}
+            onPriceSelect={price => setSelectedOrderPrice(price?.toFixed(2) || '')}
+            onDrawingCreated={handleDrawingCreated}
+          />
           <div className="mt-2 flex items-center gap-6 text-[11px] text-slate-600">
             {queryStats && (
               <span>
@@ -473,12 +486,47 @@ export default function ChartPage() {
         </div>
 
         <div className="w-64 flex-shrink-0 flex flex-col gap-3">
-          <TradingPanel
-            symbol={symbol}
-            currentPrice={currentPrice}
-            selectedPrice={selectedOrderPrice}
-          />
-          <AlertPanel symbol={symbol} currentPrice={currentPrice} />
+          {isAuthenticated ? (
+            <>
+              <TradingPanel
+                symbol={symbol}
+                currentPrice={currentPrice}
+                selectedPrice={selectedOrderPrice}
+              />
+              <AlertPanel symbol={symbol} currentPrice={currentPrice} />
+            </>
+          ) : (
+            <div className="bg-[#0f172a] border border-slate-800 rounded-xl p-5 flex flex-col gap-4">
+              <div className="text-center">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center mx-auto mb-3">
+                  <Lock size={18} className="text-blue-400" />
+                </div>
+                <p className="text-sm font-semibold text-white mb-1">Sign in to trade</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Access paper trading, limit orders, price alerts and portfolio analytics.
+                </p>
+              </div>
+              <Link
+                to="/login"
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg text-center transition-colors"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/register"
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg text-center transition-colors"
+              >
+                Create Free Account
+              </Link>
+              <div className="border-t border-slate-800 pt-3 space-y-1.5 text-[10px] text-slate-600">
+                {['$100K virtual balance', 'Market & limit orders', 'Price alerts', 'Portfolio analytics', 'AI predictions'].map(f => (
+                  <div key={f} className="flex items-center gap-1.5">
+                    <span className="text-blue-500">✓</span> {f}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

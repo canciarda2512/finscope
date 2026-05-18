@@ -15,6 +15,50 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+// Peak-to-trough max drawdown from the REALIZED PnL trajectory.
+// Tracks cumulative realized PnL after each sell trade and measures the
+// largest peak→trough decline as a % of the portfolio's peak equity.
+// Buying into positions does NOT count as a drawdown — only actual
+// realized losses (selling below cost basis) do.
+function calculateMaxDrawdown(sellTrades, startBalance) {
+  if (!sellTrades || sellTrades.length === 0) return 0;
+
+  let cumulativePnL = 0;
+  let peakEquity    = startBalance;
+  let maxDD         = 0;
+
+  for (const trade of sellTrades) {
+    const pnl = Number(trade.realizedPnL ?? 0);
+    cumulativePnL   += pnl;
+    const equity     = startBalance + cumulativePnL;
+    if (equity > peakEquity) peakEquity = equity;
+    if (peakEquity > 0) {
+      const dd = ((peakEquity - equity) / peakEquity) * 100;
+      if (dd > maxDD) maxDD = dd;
+    }
+  }
+
+  return maxDD; // positive number; 0 means no drawdown so far
+}
+
+// Per-trade Sharpe ratio from realized return percentages.
+// Requires at least 2 closed sell trades; risk-free rate = 0 (holding
+// period per trade is unknown so annualizing a fixed rf would be misleading).
+function calculateSharpeRatio(enrichedTrades) {
+  const returns = enrichedTrades
+    .filter(t => t.type === 'sell' && t.realizedPnLPercent != null)
+    .map(t => toNumber(t.realizedPnLPercent) / 100);
+
+  if (returns.length < 2) return 0;
+
+  const n    = returns.length;
+  const mean = returns.reduce((s, r) => s + r, 0) / n;
+  const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (n - 1);
+  const std  = Math.sqrt(variance);
+
+  return std > 0 ? mean / std : 0;
+}
+
 function calculateRealizedPnL(trades) {
   const positionsBySymbol = new Map();
   const enrichedAscending = [];
@@ -427,6 +471,16 @@ export async function getPortfolioSnapshot(userId) {
   const totalValue = balance + positionsValue;
   const totalPnL = totalValue - DEMO_START_BALANCE;
 
+  const sellTrades = [...realized.trades]
+    .filter(t => t.type === 'sell' && t.realizedPnL != null)
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const maxDrawdown = calculateMaxDrawdown(sellTrades, DEMO_START_BALANCE);
+
+  // ── Win Rate: winning closed trades / total closed sell trades ─────────────
+  const winRate = realized.closedTrades > 0
+    ? (realized.winningTrades / realized.closedTrades) * 100
+    : 0;
+
   return {
     balance,
     cash: balance,
@@ -439,9 +493,9 @@ export async function getPortfolioSnapshot(userId) {
     unrealizedPnL,
     closedTrades: realized.closedTrades,
     winningTrades: realized.winningTrades,
-    sharpeRatio: toNumber(portfolio.sharpeRatio),
-    maxDrawdown: toNumber(portfolio.maxDrawdown),
-    winRate: realized.winRate,
+    winRate,
+    maxDrawdown,
+    sharpeRatio: calculateSharpeRatio(realized.trades),
     positions: enrichedPositions,
     trades: realized.trades,
   };

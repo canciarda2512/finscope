@@ -1,5 +1,21 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { createChart } from 'lightweight-charts';
+import { useTheme } from '../context/ThemeContext';
+
+const CHART_THEMES = {
+  dark: {
+    background: '#0f172a',
+    text: '#94a3b8',
+    grid: '#1e293b',
+    border: '#334155',
+  },
+  light: {
+    background: '#ffffff',
+    text: '#334155',
+    grid: '#e2e8f0',
+    border: '#cbd5e1',
+  },
+};
 
 /**
  * ChartView — lightweight-charts candlestick component
@@ -26,6 +42,10 @@ export default function ChartView({
   onPriceSelect,
   onDrawingCreated,
 }) {
+  const { theme } = useTheme();
+  const themeRef = useRef(theme);
+  useEffect(() => { themeRef.current = theme; }, [theme]);
+
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
@@ -46,6 +66,21 @@ export default function ChartView({
 
   useEffect(() => { onDrawingCreatedRef.current = onDrawingCreated; }, [onDrawingCreated]);
 
+  // ── Theme change: update chart + sub-chart colors ──
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const colors = CHART_THEMES[theme] || CHART_THEMES.dark;
+    const opts = {
+      layout: { background: { color: colors.background }, textColor: colors.text },
+      grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+      rightPriceScale: { borderColor: colors.border },
+      timeScale: { borderColor: colors.border },
+    };
+    chartRef.current.applyOptions(opts);
+    if (rsiChartRef.current)  rsiChartRef.current.applyOptions(opts);
+    if (macdChartRef.current) macdChartRef.current.applyOptions(opts);
+  }, [theme]);
+
   useEffect(() => {
     activeToolRef.current = activeTool;
     if (activeTool !== 'tline') trendlinePointsRef.current = [];
@@ -58,20 +93,22 @@ export default function ChartView({
 
     container.innerHTML = '';
 
+    const colors = CHART_THEMES[themeRef.current] || CHART_THEMES.dark;
+
     const chart = createChart(container, {
       width: container.clientWidth,
       height,
       layout: {
-        background: { color: '#0f172a' },
-        textColor: '#94a3b8',
+        background: { color: colors.background },
+        textColor: colors.text,
       },
       grid: {
-        vertLines: { color: '#1e293b' },
-        horzLines: { color: '#1e293b' },
+        vertLines: { color: colors.grid },
+        horzLines: { color: colors.grid },
       },
-      rightPriceScale: { borderColor: '#334155' },
+      rightPriceScale: { borderColor: colors.border },
       timeScale: {
-        borderColor: '#334155',
+        borderColor: colors.border,
         timeVisible: false,
         secondsVisible: false,
       },
@@ -346,13 +383,14 @@ export default function ChartView({
       .filter(c => Number.isFinite(c.time) && Number.isFinite(c.close))
       .sort((a, b) => a.time - b.time);
 
+    const colors = CHART_THEMES[themeRef.current] || CHART_THEMES.dark;
     const subChartOptions = (container) => ({
       width: container.clientWidth,
       height: 110,
-      layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
-      grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
-      rightPriceScale: { borderColor: '#334155', scaleMargins: { top: 0.1, bottom: 0.1 } },
-      timeScale: { borderColor: '#334155', timeVisible: false, secondsVisible: false },
+      layout: { background: { color: colors.background }, textColor: colors.text },
+      grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+      rightPriceScale: { borderColor: colors.border, scaleMargins: { top: 0.1, bottom: 0.1 } },
+      timeScale: { borderColor: colors.border, timeVisible: false, secondsVisible: false },
       crosshair: { mode: 1 },
       handleScroll: false,
       handleScale: false,
@@ -466,7 +504,7 @@ export default function ChartView({
         macdChartRef.current = null;
       }
     };
-  }, [indicators, candles]);
+  }, [indicators, candles, theme]);
 
   // ── Live candle update ──
   useEffect(() => {

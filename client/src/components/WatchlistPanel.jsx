@@ -128,7 +128,7 @@ export default function WatchlistPanel({
               <th className="px-6 py-4">Asset</th>
               <th className="px-6 py-4 text-right">Price</th>
               <th className="px-6 py-4 text-right">24h Change</th>
-              <th className="px-6 py-4 text-right">24h Volume</th>
+              <th className="px-6 py-4 text-right">Volume (USDT, 24h)</th>
               <th className="px-6 py-4 text-right">Live</th>
               <th className="px-6 py-4"></th>
             </tr>

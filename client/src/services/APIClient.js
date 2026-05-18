@@ -42,7 +42,9 @@ APIClient.interceptors.response.use(
         TokenManager.clear();
         window.dispatchEvent(new Event('auth:expired'));
       }
-    } else if (status === 401) {
+    } else if (status === 401 && TokenManager.getAccessToken()) {
+      // Only fire auth:expired when the user actually had a token (session truly expired).
+      // Unauthenticated requests to protected endpoints should just reject, not redirect.
       TokenManager.clear();
       window.dispatchEvent(new Event('auth:expired'));
     }

@@ -514,16 +514,20 @@ export default function Navbar() {
           <span className="text-white font-bold text-xl tracking-tighter italic">FinScope</span>
         </Link>
 
-        {isAuthenticated && (
-          <div className="hidden lg:flex gap-6 items-center mt-1">
-            <NavLink to="/" className={navLinkClass}>Chart</NavLink>
-            <NavLink to="/portfolio" className={navLinkClass}>Portfolio</NavLink>
-            <NavLink to="/watchlist" className={navLinkClass}>Watchlist</NavLink>
-            <NavLink to="/screener" className={navLinkClass}>Screener</NavLink>
-            <NavLink to="/strategy" className={navLinkClass}>Strategy</NavLink>
-            <NavLink to="/multi-chart" className={navLinkClass}>Multi-chart</NavLink>
-          </div>
-        )}
+        <div className="hidden lg:flex gap-6 items-center mt-1">
+          {isAuthenticated ? (
+            <>
+              <NavLink to="/"           className={navLinkClass}>Chart</NavLink>
+              <NavLink to="/portfolio"  className={navLinkClass}>Portfolio</NavLink>
+              <NavLink to="/watchlist"  className={navLinkClass}>Watchlist</NavLink>
+              <NavLink to="/screener"   className={navLinkClass}>Screener</NavLink>
+              <NavLink to="/strategy"   className={navLinkClass}>Strategy</NavLink>
+              <NavLink to="/multi-chart" className={navLinkClass}>Multi-chart</NavLink>
+            </>
+          ) : (
+            <NavLink to="/chart" className={navLinkClass}>Live Charts</NavLink>
+          )}
+        </div>
       </div>
 
       {/* RIGHT */}
@@ -567,14 +571,15 @@ export default function Navbar() {
 
         {isAuthenticated ? (
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-full shadow-inner">
+            <Link to="/profile" className="flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-full shadow-inner hover:border-blue-500/50 hover:bg-slate-700 transition-all">
               <User size={14} className="text-blue-400" />
               <span className="text-slate-200 text-xs font-semibold">
                 @{user?.username || 'user'}
               </span>
-            </div>
+            </Link>
             <button
               onClick={logout}
+              title="Log out"
               className="p-2 text-slate-500 hover:text-red-400 transition-all hover:scale-110"
             >
               <LogOut size={18} />

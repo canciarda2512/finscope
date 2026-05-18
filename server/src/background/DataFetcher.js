@@ -9,64 +9,61 @@ const SYMBOLS = [
   'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
 ];
 
-// Her sembol için kaç günlük geçmiş veri çekilecek
-const DAYS_HISTORY = 30;
+const DAYS_HISTORY       = 30;   // 1m veri — son 30 gün
+const DAYS_HISTORY_DAILY = 365;  // daily veri — son 1 yıl
 
-/**
- * Binance'den toplu tarihsel veri çeker ve ClickHouse'a yazar.
- * Her istek max 1000 mum, birden fazla batch ile geçmişi doldurur.
- */
-async function fetchHistorical(symbol, interval = '1m', daysBack = DAYS_HISTORY) {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function rowsFromKlines(symbol, klines) {
+  return klines.map(k => ({
+    symbol:    symbol.toUpperCase(),
+    timestamp: new Date(k.time).toISOString().replace('T', ' ').slice(0, 23),
+    open:      k.open,
+    high:      k.high,
+    low:       k.low,
+    close:     k.close,
+    volume:    k.volume,
+  }));
+}
+
+// ── Generic multi-batch historical fetch ──────────────────────────────────────
+async function fetchHistorical(symbol, interval, daysBack, table) {
   const MS_PER_CANDLE = {
-    '1m':  60 * 1000,
-    '5m':  5 * 60 * 1000,
-    '1d':  24 * 60 * 60 * 1000,
-    '1w':  7 * 24 * 60 * 60 * 1000,
+    '1m': 60_000,
+    '5m': 300_000,
+    '1d': 86_400_000,
+    '1w': 604_800_000,
   };
 
-  const candleMs = MS_PER_CANDLE[interval] || 60 * 1000;
-  const totalCandles = Math.ceil((daysBack * 24 * 60 * 60 * 1000) / candleMs);
-  const batchSize = 1000;
-  const batches = Math.ceil(totalCandles / batchSize);
+  const candleMs     = MS_PER_CANDLE[interval] || 60_000;
+  const totalCandles = Math.ceil((daysBack * 86_400_000) / candleMs);
+  const batchSize    = 1000;
+  const batches      = Math.ceil(totalCandles / batchSize);
 
-  console.log(`[${symbol}] ${interval} — ${daysBack} günlük veri, ${batches} batch...`);
+  console.log(`[${symbol}] ${interval} → ${table} — ${daysBack} gün, ${batches} batch`);
 
-  let endTime = Date.now();
+  let endTime      = Date.now();
   let totalInserted = 0;
 
   for (let i = 0; i < batches; i++) {
     const klines = await fetchKlines(symbol, interval, batchSize, endTime);
     if (!klines || klines.length === 0) break;
 
-    const rows = klines.map(k => ({
-      symbol:    symbol.toUpperCase(),
-      timestamp: new Date(k.time).toISOString().replace('T', ' ').slice(0, 23),
-      open:      k.open,
-      high:      k.high,
-      low:       k.low,
-      close:     k.close,
-      volume:    k.volume,
-    }));
+    await insert(table, rowsFromKlines(symbol, klines));
+    totalInserted += klines.length;
 
-    await insert('market_data', rows);
-    totalInserted += rows.length;
-
-    // Bir sonraki batch için endTime'ı en eski mumun zamanına çek
     endTime = klines[0].time - 1;
+    console.log(`[${symbol}] Batch ${i + 1}/${batches} — ${klines.length} bar yazıldı`);
 
-    console.log(`[${symbol}] Batch ${i + 1}/${batches} — ${rows.length} mum yazıldı`);
-
-    // Binance rate limit için kısa bekleme
     await sleep(300);
   }
 
-  console.log(`✅ [${symbol}] ${interval} — toplam ${totalInserted} mum eklendi`);
+  console.log(`✅ [${symbol}] ${interval} — toplam ${totalInserted} bar eklendi`);
 }
 
-/**
- * ClickHouse'daki en eski timestamp'i kontrol et,
- * eksik verileri doldur
- */
+// ── 1m gap fill (market_data) ─────────────────────────────────────────────────
 async function fillGaps(symbol) {
   try {
     const { rows } = await query(
@@ -76,62 +73,80 @@ async function fillGaps(symbol) {
     );
 
     const { oldest, newest, total } = rows[0] || {};
-    console.log(`[${symbol}] DB: ${total} mum | En eski: ${oldest} | En yeni: ${newest}`);
+    console.log(`[${symbol}] 1m DB: ${total} bar | En eski: ${oldest} | En yeni: ${newest}`);
 
-    // Eğer hiç veri yoksa full fetch yap
     if (!oldest || Number(total) === 0) {
-      console.log(`[${symbol}] Hiç veri yok — tarihsel veri çekiliyor...`);
-      await fetchHistorical(symbol, '1m', DAYS_HISTORY);
+      await fetchHistorical(symbol, '1m', DAYS_HISTORY, 'market_data');
       return;
     }
 
-    // En yeni veriden bu yana eksik mumları tamamla
-    const newestMs = new Date(newest).getTime();
-    const nowMs = Date.now();
-    const gapMinutes = Math.floor((nowMs - newestMs) / 60000);
-
+    const gapMinutes = Math.floor((Date.now() - new Date(newest).getTime()) / 60_000);
     if (gapMinutes > 1) {
-      console.log(`[${symbol}] ${gapMinutes} dakika eksik veri var, dolduruluyor...`);
-      const limit = Math.min(gapMinutes + 10, 1000);
-      const klines = await fetchKlines(symbol, '1m', limit);
-
-      if (klines && klines.length > 0) {
-        const rows = klines
-          .filter(k => k.time > newestMs)
-          .map(k => ({
-            symbol:    symbol.toUpperCase(),
-            timestamp: new Date(k.time).toISOString().replace('T', ' ').slice(0, 23),
-            open:      k.open,
-            high:      k.high,
-            low:       k.low,
-            close:     k.close,
-            volume:    k.volume,
-          }));
-
-        if (rows.length > 0) {
-          await insert('market_data', rows);
-          console.log(`✅ [${symbol}] ${rows.length} eksik mum eklendi`);
+      console.log(`[${symbol}] ${gapMinutes} dk eksik — dolduruluyor...`);
+      const klines = await fetchKlines(symbol, '1m', Math.min(gapMinutes + 10, 1000));
+      if (klines?.length) {
+        const newestMs = new Date(newest).getTime();
+        const filtered = klines.filter(k => k.time > newestMs);
+        if (filtered.length) {
+          await insert('market_data', rowsFromKlines(symbol, filtered));
+          console.log(`✅ [${symbol}] ${filtered.length} eksik 1m bar eklendi`);
         }
       }
     } else {
-      console.log(`✅ [${symbol}] Veri güncel`);
+      console.log(`✅ [${symbol}] 1m veri güncel`);
     }
   } catch (err) {
     console.error(`❌ fillGaps hatası (${symbol}):`, err.message);
   }
 }
 
-/**
- * Ana başlatma fonksiyonu — index.js'den çağrılır
- */
-export async function runDataFetcher() {
-  console.log('\n📦 DataFetcher başlatıldı...');
-  for (const symbol of SYMBOLS) {
-    await fillGaps(symbol);
+// ── Daily gap fill (market_data_daily) ───────────────────────────────────────
+async function fillGapsDaily(symbol) {
+  try {
+    const { rows } = await query(
+      `SELECT min(timestamp) AS oldest, max(timestamp) AS newest, count() AS total
+       FROM market_data_daily WHERE symbol = {sym: String}`,
+      { sym: symbol.toUpperCase() }
+    );
+
+    const { oldest, newest, total } = rows[0] || {};
+    console.log(`[${symbol}] 1d DB: ${total} bar | En eski: ${oldest} | En yeni: ${newest}`);
+
+    if (!oldest || Number(total) === 0) {
+      await fetchHistorical(symbol, '1d', DAYS_HISTORY_DAILY, 'market_data_daily');
+      return;
+    }
+
+    // Kaç gün eksik?
+    const newestMs  = new Date(newest).getTime();
+    const gapDays   = Math.floor((Date.now() - newestMs) / 86_400_000);
+
+    if (gapDays >= 1) {
+      console.log(`[${symbol}] ${gapDays} günlük eksik bar — dolduruluyor...`);
+      const klines = await fetchKlines(symbol, '1d', Math.min(gapDays + 2, 1000));
+      if (klines?.length) {
+        const filtered = klines.filter(k => k.time > newestMs);
+        if (filtered.length) {
+          await insert('market_data_daily', rowsFromKlines(symbol, filtered));
+          console.log(`✅ [${symbol}] ${filtered.length} eksik daily bar eklendi`);
+        }
+      }
+    } else {
+      console.log(`✅ [${symbol}] Daily veri güncel`);
+    }
+  } catch (err) {
+    console.error(`❌ fillGapsDaily hatası (${symbol}):`, err.message);
   }
-  console.log('✅ DataFetcher tamamlandı\n');
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+// ── Ana başlatma fonksiyonu ───────────────────────────────────────────────────
+export async function runDataFetcher() {
+  console.log('\n📦 DataFetcher başlatıldı...');
+
+  for (const symbol of SYMBOLS) {
+    await fillGaps(symbol);       // 1m — son 30 gün
+    await fillGapsDaily(symbol);  // 1d — son 1 yıl
+  }
+
+  console.log('✅ DataFetcher tamamlandı\n');
 }
