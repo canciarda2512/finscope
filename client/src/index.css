@@ -85,3 +85,12 @@ body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
 }
+
+/* Landing page ticker animation */
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-ticker {
+  animation: ticker 30s linear infinite;
+}
