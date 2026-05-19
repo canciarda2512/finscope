@@ -30,6 +30,51 @@ const SYMBOL_NAMES = {
   OPUSDT: 'Optimism', NEARUSDT: 'NEAR', INJUSDT: 'Injective', SUIUSDT: 'Sui', SEIUSDT: 'Sei',
 };
 
+function AiBanner({ result, onClose }) {
+  const linR2  = result.models?.linear_r2 ?? null;
+  const polyR2 = result.models?.poly_r2   ?? null;
+  const hasModels = linR2 !== null && polyR2 !== null;
+  const linWins   = hasModels && linR2 >= polyR2;
+  const bestR2    = hasModels ? Math.max(linR2, polyR2) : null;
+  const bestLabel = linWins ? 'Linear' : 'Polynomial';
+
+  return (
+    <div style={{ backgroundColor: 'var(--accent-muted)', borderBottom: '1px solid var(--accent-ring)' }}
+      className="px-3 py-2 text-[11px]">
+      <div className="flex items-center gap-2">
+        <Brain size={12} style={{ color: 'var(--accent-text)' }} />
+        <span style={{ color: 'var(--accent-text)' }}>
+          AI projection · next 7 candles ·{' '}
+          <strong style={{ color: result.direction === 'UP' ? 'var(--green)' : 'var(--red)' }}>
+            {result.direction}
+          </strong>
+          {hasModels
+            ? <> trend · Best fit: <strong>{bestLabel} R²: {(bestR2 * 100).toFixed(1)}%</strong></>
+            : <> trend · Model fit: <strong>{result.confidence}%</strong></>
+          }
+        </span>
+        <button onClick={onClose} className="ml-auto opacity-60 hover:opacity-100 text-[10px]"
+          style={{ color: 'var(--text-muted)' }}>dismiss</button>
+      </div>
+      {hasModels && (
+        <div className="flex items-center gap-2 mt-1 pl-5" style={{ color: 'var(--text-muted)' }}>
+          <span style={ linWins ? { color: 'var(--accent-text)', fontWeight: 600 } : {}}>
+            Linear: {(linR2 * 100).toFixed(1)}%{linWins ? ' ✓' : ''}
+          </span>
+          <span>·</span>
+          <span style={!linWins ? { color: 'var(--accent-text)', fontWeight: 600 } : {}}>
+            Polynomial: {(polyR2 * 100).toFixed(1)}%{!linWins ? ' ✓' : ''}
+          </span>
+          <span>·</span>
+          <span style={{ fontStyle: 'italic', opacity: 0.7 }}>
+            {linWins ? 'linear-dominant' : 'poly-dominant'} blend → {result.confidence}%
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChartPage() {
   const { isAuthenticated } = useAuth();
   const { theme } = useTheme();
@@ -291,14 +336,7 @@ export default function ChartPage() {
               Click the first point on the chart, then click the second point to draw a trendline.
             </div>
           )}
-          {aiResult && (
-            <div className="px-3 py-1.5 flex items-center gap-2 text-[11px]" style={{ color: 'var(--accent-text)', backgroundColor: 'var(--accent-muted)', borderBottom: '1px solid var(--accent-ring)' }}>
-              <Brain size={12} />
-              <strong style={{ color: aiResult.direction === 'UP' ? 'var(--green)' : 'var(--red)' }}>{aiResult.direction} trend</strong>
-              <span>Confidence: <strong>{aiResult.confidence}%</strong></span>
-              <button onClick={() => setAiResult(null)} className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>dismiss</button>
-            </div>
-          )}
+          {aiResult && <AiBanner result={aiResult} onClose={() => setAiResult(null)} />}
           {aiError && (
             <div className="px-3 py-1.5 text-[10px] flex items-center gap-2" style={{ color: 'var(--red)', backgroundColor: 'var(--red-muted)', borderBottom: '1px solid rgba(239,68,68,0.2)' }}>
               <Brain size={10} /> {aiError}

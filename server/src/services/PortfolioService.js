@@ -79,6 +79,7 @@ function calculateRealizedPnL(trades) {
     closedTrades,
     winningTrades,
     winRate: closedTrades > 0 ? (winningTrades / closedTrades) * 100 : 0,
+    avgCosts: positionsBySymbol,
   };
 }
 
@@ -408,18 +409,22 @@ export async function getPortfolioSnapshot(userId) {
     const latestPrice = await getLatestPrice(position.symbol);
     const currentPrice = latestPrice || toNumber(position.entryPrice);
     const quantity = toNumber(position.quantity);
-    const entryPrice = toNumber(position.entryPrice);
+    // Use avgCost from trade replay as authoritative cost basis;
+    // fall back to DB entryPrice only if no trade history exists.
+    const avgCost = realized.avgCosts.get(position.symbol)?.avgCost
+      ?? toNumber(position.entryPrice);
     const value = quantity * currentPrice;
-    const pnl = (currentPrice - entryPrice) * quantity;
+    const pnl = (currentPrice - avgCost) * quantity;
 
     positionsValue += value;
     unrealizedPnL += pnl;
     enrichedPositions.push({
       ...position,
+      avgCost,
       currentPrice,
       value,
       pnl,
-      pnlPercent: entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0,
+      pnlPercent: avgCost > 0 ? ((currentPrice - avgCost) / avgCost) * 100 : 0,
     });
   }
 
@@ -449,30 +454,59 @@ export async function getPortfolioSnapshot(userId) {
 
 export async function getPerformanceDatapoints(userId) {
   const snapshot = await getPortfolioSnapshot(userId);
-  const ascendingTrades = [...snapshot.trades].reverse();
-  let value = DEMO_START_BALANCE;
+  const ascendingTrades = [...snapshot.trades].sort((a, b) => (
+    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  ));
+  const positionsBySymbol = new Map();
+  const lastPriceBySymbol = new Map();
+  let cash = DEMO_START_BALANCE;
+
+  const calculateEquity = () => {
+    let positionsValue = 0;
+    for (const [symbol, quantity] of positionsBySymbol.entries()) {
+      if (quantity <= 0) continue;
+      positionsValue += quantity * toNumber(lastPriceBySymbol.get(symbol));
+    }
+    return cash + positionsValue;
+  };
 
   const datapoints = [{
     date: 'Start',
-    value,
+    value: DEMO_START_BALANCE,
+    label: 'Start',
   }];
 
   for (const trade of ascendingTrades) {
+    const symbol = String(trade.symbol || '').toUpperCase();
+    const type = String(trade.type || '').toLowerCase();
+    const quantity = toNumber(trade.quantity);
+    const price = toNumber(trade.price);
     const tradeTotal = toNumber(trade.total);
-    if (trade.type === 'buy') {
-      value -= tradeTotal; 
-    } else if (trade.type === 'sell') {
-      value += tradeTotal; 
+    const currentQuantity = toNumber(positionsBySymbol.get(symbol));
+
+    lastPriceBySymbol.set(symbol, price);
+
+    if (type === 'buy') {
+      cash -= tradeTotal;
+      positionsBySymbol.set(symbol, currentQuantity + quantity);
+    } else if (type === 'sell') {
+      cash += tradeTotal;
+      positionsBySymbol.set(symbol, Math.max(currentQuantity - quantity, 0));
     }
+
     datapoints.push({
       date: trade.timestamp,
-      value,
+      value: calculateEquity(),
+      label: `${type.toUpperCase()} ${symbol}`,
+      tradeType: type,
+      symbol,
     });
   }
 
   datapoints.push({
     date: 'Now',
     value: snapshot.totalValue,
+    label: 'Now',
   });
 
   return datapoints;

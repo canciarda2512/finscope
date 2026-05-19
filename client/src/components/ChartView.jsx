@@ -37,6 +37,8 @@ export default function ChartView({
   const drawingSeriesRef = useRef([]);
   const savedDrawingSeriesRef = useRef([]);
   const aiSeriesRef = useRef(null);
+  const aiLinSeriesRef = useRef(null);
+  const aiPolySeriesRef = useRef(null);
   const anomalySeriesRef = useRef(null);
   const indicatorSeriesRef = useRef([]);
 
@@ -496,10 +498,12 @@ export default function ChartView({
   useEffect(() => {
     if (!chartRef.current) return;
 
-    // Remove existing AI series
-    if (aiSeriesRef.current) {
-      try { chartRef.current.removeSeries(aiSeriesRef.current); } catch (_) {}
-      aiSeriesRef.current = null;
+    // Remove all existing AI series
+    for (const ref of [aiLinSeriesRef, aiPolySeriesRef, aiSeriesRef]) {
+      if (ref.current) {
+        try { chartRef.current.removeSeries(ref.current); } catch (_) {}
+        ref.current = null;
+      }
     }
 
     if (!aiPrediction?.predictedValues?.length || !candles?.length) return;
@@ -507,28 +511,62 @@ export default function ChartView({
     const lastCandle = candles[candles.length - 1];
     const intervalSeconds = timeframeToSeconds(timeframe);
 
-    // Build predicted data points starting from the candle AFTER the last one
-    const predData = aiPrediction.predictedValues.map((value, i) => ({
-      time: lastCandle.time + (i + 1) * intervalSeconds,
-      value,
-    }));
+    // Shift raw values so the projection starts exactly at lastCandle.close,
+    // preserving slope/direction without a visual gap artifact.
+    const anchorShift = (rawVals) => {
+      const off = rawVals.length > 0 ? lastCandle.close - rawVals[0] : 0;
+      return [
+        { time: lastCandle.time, value: lastCandle.close },
+        ...rawVals.map((v, i) => ({
+          time: lastCandle.time + (i + 1) * intervalSeconds,
+          value: v + off,
+        })),
+      ];
+    };
 
+    const models = aiPrediction.models ?? {};
+
+    // Linear — thin blue dotted
+    if (models.linear_values?.length) {
+      const s = chartRef.current.addLineSeries({
+        color: '#60a5fa',
+        lineWidth: 1,
+        lineStyle: 3,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: `Linear R²:${(models.linear_r2 * 100).toFixed(1)}%`,
+      });
+      s.setData(anchorShift(models.linear_values));
+      aiLinSeriesRef.current = s;
+    }
+
+    // Polynomial — thin orange dotted
+    if (models.poly_values?.length) {
+      const s = chartRef.current.addLineSeries({
+        color: '#fb923c',
+        lineWidth: 1,
+        lineStyle: 3,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: `Poly R²:${(models.poly_r2 * 100).toFixed(1)}%`,
+      });
+      s.setData(anchorShift(models.poly_values));
+      aiPolySeriesRef.current = s;
+    }
+
+    // Ensemble — purple dashed (main result)
     const s = chartRef.current.addLineSeries({
       color: '#a855f7',
       lineWidth: 2,
-      lineStyle: 2,          // dashed
+      lineStyle: 2,
       priceLineVisible: false,
       lastValueVisible: true,
       crosshairMarkerVisible: true,
-      title: `AI (${aiPrediction.direction} ${aiPrediction.confidence}%)`,
+      title: `AI (${aiPrediction.direction})`,
     });
-
-    // Anchor line at last close so it connects visually
-    s.setData([
-      { time: lastCandle.time, value: lastCandle.close },
-      ...predData,
-    ]);
-
+    s.setData(anchorShift(aiPrediction.predictedValues));
     aiSeriesRef.current = s;
   }, [aiPrediction, candles, timeframe]);
 

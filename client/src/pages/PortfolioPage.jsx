@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, Briefcase, Clock, Search, Target, TrendingUp, Wallet
 } from 'lucide-react';
@@ -27,6 +27,14 @@ function formatDate(value) {
   if (!value) return '-';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-US');
+}
+
+function shortDate(value) {
+  if (!value || value === 'Start' || value === 'Now') return value || '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export default function PortfolioPage() {
@@ -79,20 +87,6 @@ export default function PortfolioPage() {
     return trades.filter(trade => trade.symbol?.toLowerCase().includes(term) || trade.type?.toLowerCase().includes(term));
   }, [portfolio, search]);
 
-  const chartPoints = useMemo(() => {
-    if (!performance.length) return [];
-    const values = performance.map(point => Number(point.value || 0));
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const range = max - min || 1;
-
-    return performance.map((point, index) => ({
-      ...point,
-      left: performance.length === 1 ? 50 : (index / (performance.length - 1)) * 100,
-      top: 100 - (((Number(point.value || 0) - min) / range) * 80 + 10),
-    }));
-  }, [performance]);
-
   const pnlUp = Number(portfolio?.totalPnL || 0) >= 0;
   const positions = portfolio?.positions || [];
 
@@ -120,31 +114,51 @@ export default function PortfolioPage() {
           <MetricCard icon={Wallet} label="Total Value" value={money(portfolio?.totalValue)} detail={`${money(portfolio?.cash)} cash`} tone="white" />
           <MetricCard icon={TrendingUp} label="Total P&L" value={percent(portfolio?.totalPnLPercent)} detail={`${money(portfolio?.realizedPnL)} realized`} tone={pnlUp ? 'emerald' : 'rose'} />
           <MetricCard icon={Briefcase} label="Positions Value" value={money(portfolio?.positionsValue)} detail={`${positions.length} open positions`} tone="white" />
-          <MetricCard icon={Target} label="Max Drawdown" value={percent(portfolio?.maxDrawdown)} detail="demo metric" tone="rose" />
+          <MetricCard
+            icon={Target}
+            label="Max Drawdown"
+            value={
+              portfolio?.maxDrawdown > 0
+                ? `−${Number(portfolio.maxDrawdown).toFixed(2)}%`
+                : '0.00%'
+            }
+            detail={
+              portfolio?.maxDrawdown > 0
+                ? 'Peak-to-trough realized decline'
+                : 'No drawdown recorded yet'
+            }
+            tone="rose"
+          />
           <MetricCard icon={Activity} label="Win Rate" value={percent(portfolio?.winRate)} detail={`${portfolio?.winningTrades ?? 0}/${portfolio?.closedTrades ?? 0} closed trades`} tone="blue" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2 rounded-2xl p-6 shadow-xl min-h-[350px]" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
-            <h2 className="font-bold mb-6 flex items-center gap-2 text-sm uppercase tracking-wider" style={{ color: 'var(--text-primary)' }}>
-              <TrendingUp size={16} /> Equity Curve
-            </h2>
-            <div className="relative h-64 rounded-xl overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
-              {chartPoints.length < 2 ? (
-                <div className="h-full flex items-center justify-center text-sm font-mono" style={{ color: 'var(--text-dim)' }}>
-                  Place a demo trade to start the equity curve.
-                </div>
-              ) : (
-                chartPoints.map((point, index) => (
-                  <div
-                    key={`${point.date}-${index}`}
-                    className="absolute h-2 w-2 -ml-1 -mt-1 rounded-full shadow-lg"
-                    style={{ backgroundColor: 'var(--accent)', boxShadow: '0 0 8px var(--accent-ring)' }}
-                    style={{ left: `${point.left}%`, top: `${point.top}%` }}
-                    title={`${formatDate(point.date)} - ${money(point.value)}`}
-                  />
-                ))
-              )}
+          <div className="lg:col-span-2 bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="px-6 pt-5 pb-2 flex items-start justify-between">
+              <div>
+                <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.15em] flex items-center gap-1.5">
+                  <TrendingUp size={13} /> Equity Curve
+                </h2>
+                <p className="text-[11px] text-slate-600 mt-0.5">Realized P&L + unrealized at market price</p>
+              </div>
+              {performance.length >= 2 && (() => {
+                const lastVal = Number(performance[performance.length - 1]?.value ?? 0);
+                const start = portfolio?.startBalance ?? 100000;
+                const diff = lastVal - start;
+                const pct = (diff / start) * 100;
+                const up = diff >= 0;
+                return (
+                  <div className="text-right">
+                    <p className="text-white font-bold text-xl leading-tight">{money(lastVal)}</p>
+                    <p className={`text-xs font-semibold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {up ? '+' : ''}{money(diff)} ({up ? '+' : ''}{pct.toFixed(2)}%)
+                    </p>
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="px-2 pb-4">
+              <EquityChart performance={performance} startBalance={portfolio?.startBalance ?? 100000} />
             </div>
           </div>
 
@@ -166,7 +180,7 @@ export default function PortfolioPage() {
                       <td className="px-5 py-4">
                         <p className="font-bold text-sm tracking-tight" style={{ color: 'var(--text-primary)' }}>{pos.symbol.replace('USDT', '/USDT')}</p>
                         <p className="text-[10px] font-mono italic" style={{ color: 'var(--text-muted)' }}>{number(pos.quantity)} units</p>
-                        <p className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Avg {money(pos.entryPrice)}</p>
+                        <p className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Avg {money(pos.avgCost ?? pos.entryPrice)}</p>
                       </td>
                       <td className="px-5 py-4 text-right">
                         <p className={`text-sm font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{money(pos.pnl)}</p>
@@ -252,6 +266,167 @@ export default function PortfolioPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function EquityChart({ performance, startBalance }) {
+  const [tip, setTip] = useState(null);
+  const svgRef = useRef(null);
+
+  const VW = 640, VH = 220;
+  const PL = 62, PR = 16, PT = 14, PB = 32;
+  const CW = VW - PL - PR, CH = VH - PT - PB;
+
+  if (!performance || performance.length < 2) {
+    return (
+      <div className="h-52 flex flex-col items-center justify-center gap-3">
+        <TrendingUp size={32} strokeWidth={1.5} className="text-slate-800" />
+        <p className="text-[13px] text-slate-600">Place a demo trade to build your equity curve</p>
+      </div>
+    );
+  }
+
+  const values = performance.map(p => Number(p.value));
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const spread = maxV - minV;
+  const pad = spread > 0 ? spread * 0.22 : (startBalance * 0.04 || 2000);
+  const yMin = minV - pad, yMax = maxV + pad, yRange = yMax - yMin;
+
+  const toX = i => PL + (i / Math.max(performance.length - 1, 1)) * CW;
+  const toY = v => PT + CH - ((v - yMin) / yRange) * CH;
+  const pts = performance.map((p, i) => ({ x: toX(i), y: toY(Number(p.value)) }));
+
+  // Smooth cubic bezier (midpoint control points)
+  let linePath = `M ${pts[0].x},${pts[0].y}`;
+  for (let i = 1; i < pts.length; i++) {
+    const { x: x0, y: y0 } = pts[i - 1];
+    const { x: x1, y: y1 } = pts[i];
+    const cpx = (x0 + x1) / 2;
+    linePath += ` C ${cpx},${y0} ${cpx},${y1} ${x1},${y1}`;
+  }
+  const firstPt = pts[0], lastPt = pts[pts.length - 1];
+  const areaPath = `${linePath} L ${lastPt.x},${PT + CH} L ${firstPt.x},${PT + CH} Z`;
+
+  const lastVal = values[values.length - 1];
+  const isUp = lastVal >= startBalance;
+  const color = isUp ? '#34d399' : '#f87171';
+  const gid = `eqg${isUp ? 'u' : 'd'}`;
+
+  // Y ticks (4 levels, bottom → top)
+  const yTicks = Array.from({ length: 4 }, (_, i) => {
+    const v = yMin + (yRange * i) / 3;
+    return { v, y: toY(v) };
+  }).reverse();
+
+  // X labels: start + 1 middle + end
+  const n = performance.length;
+  const xIdxs = [...new Set([0, n > 3 ? Math.round(n / 2) : null, n - 1].filter(v => v !== null))];
+
+  const fmtY = v => {
+    const abs = Math.abs(v);
+    if (abs >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
+    if (abs >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
+    return `$${v.toFixed(0)}`;
+  };
+  const fmtX = s => {
+    if (!s || s === 'Start') return 'Start';
+    if (s === 'Now') return 'Now';
+    const d = new Date(s);
+    return isNaN(d) ? s : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const handleMove = e => {
+    if (!svgRef.current) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * VW;
+    const frac = Math.max(0, Math.min(1, (mx - PL) / CW));
+    const idx = Math.round(frac * (n - 1));
+    const val = Number(performance[idx].value);
+    const diff = val - startBalance;
+    setTip({ x: pts[idx].x, y: pts[idx].y, val, date: performance[idx].date, diff, pct: (diff / startBalance) * 100 });
+  };
+
+  return (
+    <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`} className="w-full select-none"
+      style={{ height: '220px' }} onMouseMove={handleMove} onMouseLeave={() => setTip(null)}>
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={color} stopOpacity="0.28" />
+          <stop offset="70%"  stopColor={color} stopOpacity="0.06" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+        <filter id="eq-glow">
+          <feGaussianBlur stdDeviation="3" result="b" />
+          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <clipPath id="eq-clip">
+          <rect x={PL} y={PT} width={CW} height={CH} />
+        </clipPath>
+      </defs>
+
+      {/* Y gridlines + labels */}
+      {yTicks.map(({ v, y }, i) => (
+        <g key={i}>
+          <line x1={PL} y1={y} x2={PL + CW} y2={y} stroke="#1e293b" strokeWidth="1" />
+          <text x={PL - 8} y={y} textAnchor="end" dominantBaseline="middle"
+            fill="#334155" fontSize="10.5" fontFamily="monospace">{fmtY(v)}</text>
+        </g>
+      ))}
+
+      {/* Start-balance dashed reference */}
+      {startBalance >= yMin && startBalance <= yMax && (
+        <line x1={PL} y1={toY(startBalance)} x2={PL + CW} y2={toY(startBalance)}
+          stroke="#334155" strokeWidth="1" strokeDasharray="5,4" />
+      )}
+
+      {/* Area fill */}
+      <path d={areaPath} fill={`url(#${gid})`} clipPath="url(#eq-clip)" />
+
+      {/* Curve */}
+      <path d={linePath} fill="none" stroke={color} strokeWidth="2.5"
+        strokeLinecap="round" clipPath="url(#eq-clip)" />
+
+      {/* Start dot */}
+      <circle cx={firstPt.x} cy={firstPt.y} r="3" fill={color} stroke="#0f172a" strokeWidth="2" />
+
+      {/* End dot (glowing) */}
+      <circle cx={lastPt.x} cy={lastPt.y} r="5.5" fill={color} stroke="#0f172a" strokeWidth="2"
+        filter="url(#eq-glow)" />
+
+      {/* X-axis labels */}
+      {xIdxs.map(i => (
+        <text key={i} x={toX(i)} y={PT + CH + 18}
+          textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
+          fill="#475569" fontSize="10" fontFamily="system-ui, sans-serif">
+          {fmtX(performance[i].date)}
+        </text>
+      ))}
+
+      {/* Hover crosshair + tooltip */}
+      {tip && (() => {
+        const BW = 152, BH = 54;
+        const bx = tip.x + 14 + BW > PL + CW ? tip.x - BW - 14 : tip.x + 14;
+        const by = Math.max(PT, Math.min(PT + CH - BH, tip.y - BH / 2));
+        const tc = tip.diff >= 0 ? '#34d399' : '#f87171';
+        return (
+          <g>
+            <line x1={tip.x} y1={PT} x2={tip.x} y2={PT + CH}
+              stroke="#334155" strokeWidth="1" strokeDasharray="3,3" />
+            <circle cx={tip.x} cy={tip.y} r="5" fill={color} stroke="#0f172a" strokeWidth="2" />
+            <rect x={bx} y={by} width={BW} height={BH} rx="8"
+              fill="#1e293b" stroke="#334155" strokeWidth="1" />
+            <text x={bx + 12} y={by + 17} fill="#64748b" fontSize="9.5" fontFamily="system-ui">{fmtX(tip.date)}</text>
+            <text x={bx + 12} y={by + 38} fill="#f1f5f9" fontSize="15"
+              fontWeight="bold" fontFamily="monospace">{fmtY(tip.val)}</text>
+            <text x={bx + BW - 12} y={by + 38} textAnchor="end"
+              fill={tc} fontSize="11" fontFamily="system-ui">
+              {tip.diff >= 0 ? '+' : ''}{tip.pct.toFixed(2)}%
+            </text>
+          </g>
+        );
+      })()}
+    </svg>
   );
 }
 
