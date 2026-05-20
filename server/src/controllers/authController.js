@@ -28,7 +28,7 @@ function maskEmail(email) {
 // ── POST /api/auth/register ───────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, username, tcKimlikNo, phoneNumber } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
@@ -36,6 +36,14 @@ router.post('/register', async (req, res) => {
 
     if (password.length < 8) {
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    if (!tcKimlikNo || !/^\d{11}$/.test(tcKimlikNo) || tcKimlikNo[0] === '0') {
+      return res.status(400).json({ message: 'TC kimlik numarası 11 haneli ve geçerli olmalıdır' });
+    }
+
+    if (!phoneNumber || !/^\+?\d{10,15}$/.test(phoneNumber.replace(/\s/g, ''))) {
+      return res.status(400).json({ message: 'Geçerli bir telefon numarası giriniz' });
     }
 
     const existing = await ClickHouseClient.getUserByEmail(email);
@@ -48,10 +56,12 @@ router.post('/register', async (req, res) => {
 
     await ClickHouseClient.createUser({
       id: userId,
-      username: email.split('@')[0],
+      username: (username?.trim()) || email.split('@')[0],
       email,
       passwordHash,
       refreshToken: '',
+      tcKimlikNo,
+      phoneNumber: phoneNumber.replace(/\s/g, ''),
       createdAt: nowClickHouse(),
     });
 
@@ -186,6 +196,8 @@ router.get('/me', async (req, res) => {
         username: user.username,
         email: user.email,
         twoFactorEnabled: Number(user.twoFactorEnabled) === 1,
+        tcKimlikNo: user.tcKimlikNo || '',
+        phoneNumber: user.phoneNumber || '',
         createdAt: user.createdAt,
       },
     });
@@ -294,6 +306,35 @@ router.post('/2fa/verify', authMiddleware, async (req, res) => {
     return res.json({ success: true, twoFactorEnabled: true });
   } catch (err) {
     console.error('2fa/verify error:', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ── POST /api/auth/change-phone ───────────────────────────────────────────────
+// Protected — verifies OTP then updates phone number
+router.post('/change-phone', authMiddleware, async (req, res) => {
+  try {
+    const { newPhone, code } = req.body;
+    const userId = req.userId;
+
+    if (!newPhone || !/^\+?\d{10,15}$/.test(newPhone.replace(/\s/g, ''))) {
+      return res.status(400).json({ message: 'Invalid phone number' });
+    }
+
+    const stored = await getOTP(userId);
+    if (!stored || stored !== String(code).trim()) {
+      return res.status(400).json({ message: 'Invalid or expired verification code' });
+    }
+
+    await deleteOTP(userId);
+    await execute(
+      `ALTER TABLE users UPDATE phoneNumber = {phone:String} WHERE id = {id:String}`,
+      { phone: newPhone.replace(/\s/g, ''), id: userId }
+    );
+
+    return res.json({ success: true, phoneNumber: newPhone.replace(/\s/g, '') });
+  } catch (err) {
+    console.error('change-phone error:', err);
     return res.status(500).json({ message: 'Server error' });
   }
 });

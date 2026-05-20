@@ -560,7 +560,7 @@ function OTPInput({ value, onChange }) {
 }
 
 // ── Security Tab ─────────────────────────────────────────────────────────────
-function SecurityTab({ user, twoFAEnabled, onTwoFAChange }) {
+function SecurityTab({ user, twoFAEnabled, onTwoFAChange, onPhoneChange }) {
   // ── Change Password modal state ────────────────────────────────────────────
   const [showPwModal, setShowPwModal] = useState(false);
   const [pwData, setPwData]           = useState({ current: '', next: '', confirm: '' });
@@ -576,6 +576,16 @@ function SecurityTab({ user, twoFAEnabled, onTwoFAChange }) {
   const [tfaCode, setTfaCode]         = useState('');
   const [tfaLoading, setTfaLoading]   = useState(false);
   const [tfaError, setTfaError]       = useState('');
+
+  // ── Change Phone modal state ─────────────────────────────────────────────────
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneStep, setPhoneStep]           = useState('input'); // 'input' | 'verify'
+  const [newPhone, setNewPhone]             = useState('');
+  const [phoneCode, setPhoneCode]           = useState('');
+  const [phoneMasked, setPhoneMasked]       = useState('');
+  const [phoneLoading, setPhoneLoading]     = useState(false);
+  const [phoneError, setPhoneError]         = useState('');
+  const [phoneSuccess, setPhoneSuccess]     = useState(false);
 
   const nextStrength = pwStrength(pwData.next);
   const nextMeta     = PW_META[nextStrength];
@@ -644,9 +654,91 @@ function SecurityTab({ user, twoFAEnabled, onTwoFAChange }) {
     }
   }
 
+  // ── Change Phone handlers ─────────────────────────────────────────────────
+  function openPhoneModal() {
+    setNewPhone(''); setPhoneCode(''); setPhoneError('');
+    setPhoneSuccess(false); setPhoneStep('input');
+    setShowPhoneModal(true);
+  }
+
+  async function handleSendPhoneOTP() {
+    const cleaned = newPhone.replace(/\s/g, '');
+    if (!/^\+?\d{10,15}$/.test(cleaned)) {
+      setPhoneError('Enter a valid phone number.'); return;
+    }
+    setPhoneError(''); setPhoneLoading(true);
+    try {
+      const res = await APIClient.post('/auth/2fa/send');
+      setPhoneMasked(res.data.maskedEmail || user?.email || '');
+      setPhoneStep('verify');
+    } catch (err) {
+      setPhoneError(err.response?.data?.message || 'Failed to send verification code.');
+    } finally {
+      setPhoneLoading(false);
+    }
+  }
+
+  async function handleVerifyPhoneOTP() {
+    setPhoneError(''); setPhoneLoading(true);
+    try {
+      await APIClient.post('/auth/change-phone', {
+        newPhone: newPhone.replace(/\s/g, ''),
+        code: phoneCode.trim(),
+      });
+      setPhoneSuccess(true);
+      onPhoneChange?.();
+    } catch (err) {
+      setPhoneError(err.response?.data?.message || 'Invalid or expired code.');
+    } finally {
+      setPhoneLoading(false);
+    }
+  }
+
   return (
     <>
       <div className="space-y-6">
+        {/* Personal Information */}
+        <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6">
+          <h3 className="text-sm font-semibold text-slate-300 mb-1">Personal Information</h3>
+          <p className="text-xs text-slate-600 mb-6">Your identity information registered with FinScope.</p>
+
+          {/* TC Kimlik No */}
+          <div className="flex items-center justify-between py-4 border-b border-slate-800/60">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center">
+                <BadgeCheck size={18} className="text-slate-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">National ID (TC)</p>
+                <p className="text-xs text-slate-500 mt-0.5 font-mono">
+                  {user?.tcKimlikNo
+                    ? `${user.tcKimlikNo.slice(0, 3)}${'*'.repeat(5)}${user.tcKimlikNo.slice(-3)}`
+                    : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Phone Number */}
+          <div className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center">
+                <Smartphone size={18} className="text-slate-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">Phone Number</p>
+                <p className="text-xs text-slate-500 mt-0.5 font-mono">{user?.phoneNumber || '—'}</p>
+              </div>
+            </div>
+            <button
+              onClick={openPhoneModal}
+              className="text-xs font-medium px-4 py-2 rounded-lg text-blue-400 hover:bg-blue-500/10 border border-blue-500/20 transition-all"
+            >
+              Change
+            </button>
+          </div>
+        </div>
+
         {/* Account Security */}
         <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-6">
           <h3 className="text-sm font-semibold text-slate-300 mb-1">Account Security</h3>
@@ -827,6 +919,75 @@ function SecurityTab({ user, twoFAEnabled, onTwoFAChange }) {
         </Modal>
       )}
 
+      {/* ── Change Phone Modal ── */}
+      {showPhoneModal && (
+        <Modal title="Change Phone Number" onClose={() => setShowPhoneModal(false)}>
+          {phoneSuccess ? (
+            <div className="flex flex-col items-center py-4 gap-3">
+              <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center">
+                <Check size={28} className="text-green-400" />
+              </div>
+              <p className="text-white font-semibold">Phone number updated!</p>
+              <p className="text-slate-500 text-sm text-center">Your phone number has been changed successfully.</p>
+              <button onClick={() => setShowPhoneModal(false)}
+                className="mt-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition">
+                Done
+              </button>
+            </div>
+          ) : phoneStep === 'input' ? (
+            <div className="space-y-5">
+              <p className="text-slate-400 text-sm">
+                Enter your new phone number. A verification code will be sent to your email to confirm the change.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">New Phone Number</label>
+                <input
+                  type="tel"
+                  value={newPhone}
+                  onChange={e => setNewPhone(e.target.value)}
+                  placeholder="+90 5XX XXX XX XX"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-blue-500"
+                />
+              </div>
+              {phoneError && (
+                <div className="bg-red-900/40 border border-red-700/50 text-red-300 px-3 py-2 rounded-lg text-xs">
+                  {phoneError}
+                </div>
+              )}
+              <button onClick={handleSendPhoneOTP} disabled={phoneLoading || !newPhone}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800/60 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition">
+                {phoneLoading ? 'Sending…' : 'Send Verification Code'}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="text-center">
+                <p className="text-white font-semibold mb-1">Enter verification code</p>
+                <p className="text-slate-400 text-sm">
+                  Code sent to <span className="text-slate-200">{phoneMasked}</span>
+                  <br />
+                  <span className="text-slate-600 text-xs">Valid for 5 minutes</span>
+                </p>
+              </div>
+              <OTPInput value={phoneCode} onChange={setPhoneCode} />
+              {phoneError && (
+                <div className="bg-red-900/40 border border-red-700/50 text-red-300 px-3 py-2 rounded-lg text-xs">
+                  {phoneError}
+                </div>
+              )}
+              <button onClick={handleVerifyPhoneOTP} disabled={phoneLoading || phoneCode.length < 6}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800/60 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg text-sm transition">
+                {phoneLoading ? 'Verifying…' : 'Confirm Change'}
+              </button>
+              <button onClick={() => { setPhoneStep('input'); setPhoneError(''); setPhoneCode(''); }}
+                className="w-full text-slate-500 hover:text-slate-300 text-sm py-1 transition">
+                Resend code
+              </button>
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* ── 2FA Modal ── */}
       {tfaModal && (
         <Modal
@@ -987,9 +1148,16 @@ const TABS = [
 export default function ProfilePage() {
   const { user } = useAuth();
   const [portfolioData, setPortfolioData] = useState(null);
+  const [meUser, setMeUser]               = useState(null);
   const [loading, setLoading]             = useState(true);
   const [activeTab, setActiveTab]         = useState('overview');
   const [twoFAEnabled, setTwoFAEnabled]   = useState(false);
+
+  const refreshMe = () =>
+    APIClient.get('/auth/me').then(res => {
+      setMeUser(res.data.user);
+      setTwoFAEnabled(!!res.data.user?.twoFactorEnabled);
+    }).catch(() => {});
 
   useEffect(() => {
     let cancelled = false;
@@ -999,6 +1167,7 @@ export default function ProfilePage() {
     ]).then(([portfolioRes, meRes]) => {
       if (!cancelled) {
         setPortfolioData(portfolioRes.data);
+        setMeUser(meRes.data.user);
         setTwoFAEnabled(!!meRes.data.user?.twoFactorEnabled);
       }
     }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false); });
@@ -1061,7 +1230,21 @@ export default function ProfilePage() {
                 px-2.5 py-0.5 rounded-full font-bold tracking-wide">VERIFIED</span>
             </div>
             <p className="text-slate-400 text-sm">{user?.email || '—'}</p>
-            <div className="flex flex-wrap gap-4 mt-2">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+              {meUser?.phoneNumber && (
+                <span className="text-xs text-slate-500 flex items-center gap-1">
+                  <Smartphone size={11} className="text-slate-500" />
+                  {meUser.phoneNumber}
+                </span>
+              )}
+              {meUser?.tcKimlikNo && (
+                <span className="text-xs text-slate-500 flex items-center gap-1">
+                  <BadgeCheck size={11} className="text-slate-500" />
+                  TC: {meUser.tcKimlikNo.slice(0, 3)}{'*'.repeat(5)}{meUser.tcKimlikNo.slice(-3)}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-4 mt-1.5">
               <span className="text-xs text-slate-600 flex items-center gap-1">
                 <CheckCircle2 size={11} className="text-green-500" />
                 Member since {fmtDate(user?.createdAt)}
@@ -1128,7 +1311,7 @@ export default function ProfilePage() {
         {activeTab === 'overview'     && <OverviewTab data={portfolioData} loading={loading} />}
         {activeTab === 'portfolio'    && <PortfolioTab data={portfolioData} />}
         {activeTab === 'transactions' && <TransactionsTab data={portfolioData} />}
-        {activeTab === 'security'     && <SecurityTab user={user} twoFAEnabled={twoFAEnabled} onTwoFAChange={setTwoFAEnabled} />}
+        {activeTab === 'security'     && <SecurityTab user={meUser || user} twoFAEnabled={twoFAEnabled} onTwoFAChange={setTwoFAEnabled} onPhoneChange={refreshMe} />}
         {activeTab === 'settings'     && <SettingsTab user={user} />}
       </div>
     </div>
