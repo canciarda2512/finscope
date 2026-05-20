@@ -216,8 +216,8 @@ router.post('/drawings', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'symbol, timeframe, type, and coordinates are required.' });
   }
   if (!validateParams(symbol, timeframe, res)) return;
-  if (!['hline', 'trendline'].includes(type)) {
-    return res.status(400).json({ error: "Invalid type. Must be 'hline' or 'trendline'." });
+  if (!['hline', 'trendline', 'fib', 'rect'].includes(type)) {
+    return res.status(400).json({ error: "Invalid type. Must be 'hline', 'trendline', 'fib', or 'rect'." });
   }
 
   let coordsStr;
@@ -280,28 +280,30 @@ router.delete('/drawings/:id', authMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────
 // ── POST /api/chart/predict  (AI Service proxy)
 // ─────────────────────────────────────────────
-// Requires auth. Fetches last 150 daily candles from ClickHouse and forwards
-// to AI Service /predict. Returns direction, confidence, and predicted values.
+// Requires auth. Fetches candles for the selected timeframe from ClickHouse
+// and forwards to AI Service /predict. Returns direction, confidence, and predicted values.
 router.post('/predict', authMiddleware, async (req, res) => {
   const { symbol = 'BTCUSDT', timeframe = '1D' } = req.body;
 
   if (!validateParams(symbol, timeframe, res)) return;
 
+  const interval = TF_INTERVAL[timeframe];
+
   try {
-    // 1. Pull candle history from ClickHouse for the AI model
+    // 1. Pull candle history from ClickHouse for the AI model (last 200 candles)
     const sql = `
       SELECT
-        toUnixTimestamp(toStartOfDay(timestamp)) AS time,
+        toUnixTimestamp(${interval}) AS time,
         argMin(open,  timestamp) AS open,
         max(high)                AS high,
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data_daily
+      FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
-      LIMIT 150
+      LIMIT 200
     `;
 
     const { rows } = await query(sql, { sym: symbol.toUpperCase() });
@@ -320,7 +322,7 @@ router.post('/predict', authMiddleware, async (req, res) => {
 
     if (candles.length < 30) {
       return res.status(422).json({
-        error: `AI prediction requires at least 30 days of data (available: ${candles.length}).`
+        error: `AI prediction requires at least 30 candles of data (available: ${candles.length}).`
       });
     }
 
