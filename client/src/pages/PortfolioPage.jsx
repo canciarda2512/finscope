@@ -3,6 +3,7 @@ import {
   Activity, Briefcase, Clock, Search, Target, TrendingUp, Wallet
 } from 'lucide-react';
 import APIClient from '../services/APIClient';
+import { usePortfolio } from '../context/PortfolioContext';
 
 function money(value) {
   return Number(value || 0).toLocaleString('en-US', {
@@ -38,7 +39,7 @@ function shortDate(value) {
 }
 
 export default function PortfolioPage() {
-  const [portfolio, setPortfolio] = useState(null);
+  const { portfolio, loading: portfolioLoading } = usePortfolio();
   const [performance, setPerformance] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -47,32 +48,22 @@ export default function PortfolioPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadPortfolio = async (showLoading = false) => {
-      if (showLoading) setLoading(true);
-      setError('');
-
+    const loadPerformance = async () => {
       try {
-        const [portfolioRes, performanceRes] = await Promise.all([
-          APIClient.get('/portfolio'),
-          APIClient.get('/portfolio/performance'),
-        ]);
-
-        if (!cancelled) {
-          setPortfolio(portfolioRes.data);
-          setPerformance(performanceRes.data.datapoints || []);
-        }
+        const res = await APIClient.get('/portfolio/performance');
+        if (!cancelled) setPerformance(res.data.datapoints || []);
       } catch (err) {
         if (!cancelled) {
-          console.error('Portfolio load error:', err);
-          setError(err.response?.data?.message || 'Portfolio could not be loaded.');
+          console.error('Performance load error:', err);
+          setError(err.response?.data?.message || 'Performance data could not be loaded.');
         }
       } finally {
-        if (!cancelled && showLoading) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    loadPortfolio(true);
-    const intervalId = window.setInterval(() => loadPortfolio(false), 30000);
+    loadPerformance();
+    const intervalId = window.setInterval(loadPerformance, 30000);
 
     return () => {
       cancelled = true;
@@ -101,13 +92,13 @@ export default function PortfolioPage() {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300">
+          <div className="mb-4 rounded-lg px-4 py-3 text-sm" style={{ border: '1px solid var(--red)', backgroundColor: 'var(--red-muted)', color: 'var(--red)' }}>
             {error}
           </div>
         )}
 
         {loading && (
-          <div className="mb-4 text-sm text-slate-500">Loading portfolio...</div>
+          <div className="mb-4 text-sm" style={{ color: 'var(--text-muted)' }}>Loading portfolio...</div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
@@ -133,13 +124,13 @@ export default function PortfolioPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2 bg-[#0f172a] border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+          <div className="lg:col-span-2 rounded-2xl overflow-hidden shadow-xl" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
             <div className="px-6 pt-5 pb-2 flex items-start justify-between">
               <div>
-                <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-[0.15em] flex items-center gap-1.5">
+                <h2 className="text-[11px] font-bold uppercase tracking-[0.15em] flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
                   <TrendingUp size={13} /> Equity Curve
                 </h2>
-                <p className="text-[11px] text-slate-600 mt-0.5">Realized P&L + unrealized at market price</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-dim)' }}>Realized P&L + unrealized at market price</p>
               </div>
               {performance.length >= 2 && (() => {
                 const lastVal = Number(performance[performance.length - 1]?.value ?? 0);
@@ -149,8 +140,8 @@ export default function PortfolioPage() {
                 const up = diff >= 0;
                 return (
                   <div className="text-right">
-                    <p className="text-white font-bold text-xl leading-tight">{money(lastVal)}</p>
-                    <p className={`text-xs font-semibold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <p className="font-bold text-xl leading-tight" style={{ color: 'var(--text-primary)' }}>{money(lastVal)}</p>
+                    <p className="text-xs font-semibold" style={{ color: up ? 'var(--green)' : 'var(--red)' }}>
                       {up ? '+' : ''}{money(diff)} ({up ? '+' : ''}{pct.toFixed(2)}%)
                     </p>
                   </div>
@@ -183,7 +174,7 @@ export default function PortfolioPage() {
                         <p className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Avg {money(pos.avgCost ?? pos.entryPrice)}</p>
                       </td>
                       <td className="px-5 py-4 text-right">
-                        <p className={`text-sm font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>{money(pos.pnl)}</p>
+                        <p className="text-sm font-bold" style={{ color: up ? 'var(--green)' : 'var(--red)' }}>{money(pos.pnl)}</p>
                         <p className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>{percent(pos.pnlPercent)}</p>
                         <p className="text-[10px] font-mono" style={{ color: 'var(--text-dim)' }}>Now {money(pos.currentPrice)}</p>
                       </td>
@@ -252,9 +243,9 @@ export default function PortfolioPage() {
                       <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{number(trade.quantity)}</td>
                       <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{money(trade.price)}</td>
                       <td className="px-6 py-4 text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{money(trade.total)}</td>
-                      <td className={`px-6 py-4 text-right text-xs font-bold ${
-                        !hasRealizedPnL ? '' : realizedUp ? 'text-emerald-400' : 'text-rose-400'
-                      }`}>
+                      <td className="px-6 py-4 text-right text-xs font-bold" style={{
+                        color: !hasRealizedPnL ? 'var(--text-secondary)' : realizedUp ? 'var(--green)' : 'var(--red)',
+                      }}>
                         {hasRealizedPnL ? money(realizedPnL) : '-'}
                       </td>
                     </tr>
@@ -280,8 +271,8 @@ function EquityChart({ performance, startBalance }) {
   if (!performance || performance.length < 2) {
     return (
       <div className="h-52 flex flex-col items-center justify-center gap-3">
-        <TrendingUp size={32} strokeWidth={1.5} className="text-slate-800" />
-        <p className="text-[13px] text-slate-600">Place a demo trade to build your equity curve</p>
+        <TrendingUp size={32} strokeWidth={1.5} style={{ color: 'var(--text-dim)' }} />
+        <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Place a demo trade to build your equity curve</p>
       </div>
     );
   }
@@ -432,11 +423,11 @@ function EquityChart({ performance, startBalance }) {
 
 function MetricCard({ icon: Icon, label, value, detail, tone }) {
   const toneClass = {
-    white: 'text-white',
+    white: 'text-[var(--text-primary)]',
     emerald: 'text-emerald-400',
     rose: 'text-rose-500',
     blue: 'text-blue-400',
-  }[tone] || 'text-white';
+  }[tone] || 'text-[var(--text-primary)]';
 
   return (
     <div className="p-5 rounded-2xl" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>

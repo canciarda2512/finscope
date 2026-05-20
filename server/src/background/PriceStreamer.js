@@ -1,28 +1,33 @@
 import { WebSocket } from 'ws';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import '../config/env.js';
 import { bufferCandle, setLatestPrice } from '../services/RedisBuffer.js';
-import { onPriceTick } from './LimitOrderMonitor.js';
-
-const STREAM_SYMBOLS = [
-    'btcusdt', 'ethusdt', 'bnbusdt', 'solusdt', 'xrpusdt',
-    'adausdt', 'dogeusdt', 'avaxusdt', 'linkusdt', 'dotusdt',
-    'trxusdt', 'maticusdt', 'ltcusdt', 'bchusdt', 'uniusdt',
-    'atomusdt', 'etcusdt', 'filusdt', 'aptusdt', 'arbusdt',
-    'opusdt', 'nearusdt', 'injusdt', 'suiusdt', 'seiusdt',
-];
+import { enqueuePriceTick } from './PriceTickQueue.js';
+import { STREAM_SYMBOLS } from '../config/constants.js';
+import logger from '../utils/logger.js';
 
 const streams = STREAM_SYMBOLS.map(s => `${s}@kline_1m`).join('/');
-const BINANCE_WS_URL = `wss://stream.binance.com:9443/ws/${streams}`;
+const BINANCE_WS_BASE = process.env.BINANCE_WS_URL || 'wss://stream.binance.com:9443';
+const BINANCE_WS_URL = `${BINANCE_WS_BASE}/ws/${streams}`;
+
+const MAX_RETRIES = 10;
+const BASE_DELAY = 5000;
 
 /**
  * Starts the Binance WebSocket price stream.
  * @param {import('ws').WebSocketServer} wss — the frontend-facing WS server, used to broadcast prices
  */
 export function startPriceStreamer(wss) {
+    let retries = 0;
+
     function connect() {
-        const binanceSocket = new WebSocket(BINANCE_WS_URL);
+        const proxy = process.env.HTTPS_PROXY;
+        const wsOptions = proxy ? { agent: new HttpsProxyAgent(proxy) } : {};
+        const binanceSocket = new WebSocket(BINANCE_WS_URL, wsOptions);
 
         binanceSocket.on('open', () => {
-            console.log('✅ Binance WebSocket connected.');
+            retries = 0;
+            logger.info('Binance WebSocket connected');
         });
 
         binanceSocket.on('message', async (data) => {
@@ -31,12 +36,11 @@ export function startPriceStreamer(wss) {
 
             const livePrice = parseFloat(kline.c);
             if (Number.isFinite(livePrice)) {
-                // Store latest price in Redis for instant lookups (trades, watchlist)
                 setLatestPrice(msg.s, livePrice);
-                onPriceTick(msg.s, livePrice);
+                // Fire-and-forget: enqueue for async processing by the worker
+                enqueuePriceTick(msg.s, livePrice);
             }
 
-            // Buffer closed candle for batch insert (Redis -> ClickHouse every 5s)
             if (kline.x) {
                 try {
                     await bufferCandle({
@@ -49,11 +53,10 @@ export function startPriceStreamer(wss) {
                         volume: parseFloat(kline.v),
                     });
                 } catch (err) {
-                    console.error('❌ Buffer candle error:', err.message);
+                    logger.error({ err }, 'Buffer candle error');
                 }
             }
 
-            // Broadcast to all connected frontend clients
             const payload = JSON.stringify(msg);
             wss.clients.forEach(client => {
                 if (client.readyState === 1) client.send(payload);
@@ -61,12 +64,18 @@ export function startPriceStreamer(wss) {
         });
 
         binanceSocket.on('error', (err) => {
-            console.error('❌ Binance WebSocket error:', err.message);
+            logger.error({ err }, 'Binance WebSocket error');
         });
 
         binanceSocket.on('close', () => {
-            console.warn('⚠️ Binance WebSocket disconnected. Reconnecting in 5s...');
-            setTimeout(connect, 5000);
+            retries++;
+            if (retries > MAX_RETRIES) {
+                logger.error({ retries: MAX_RETRIES }, 'Binance WebSocket failed — giving up');
+                return;
+            }
+            const delay = Math.min(BASE_DELAY * Math.pow(2, retries - 1), 60000);
+            logger.warn({ retries, maxRetries: MAX_RETRIES, delay }, 'Binance WebSocket disconnected — reconnecting');
+            setTimeout(connect, delay);
         });
     }
 

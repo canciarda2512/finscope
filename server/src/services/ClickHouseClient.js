@@ -1,5 +1,6 @@
 import '../config/env.js';
 import { createClient } from '@clickhouse/client';
+import logger from '../utils/logger.js';
 import { readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -27,10 +28,20 @@ async function createDatabase() {
     username: process.env.CLICKHOUSE_USER || 'default',
     password: process.env.CLICKHOUSE_PASSWORD || '',
   });
-  await initClient.exec({
+  const { stream } = await initClient.exec({
     query: `CREATE DATABASE IF NOT EXISTS ${process.env.CLICKHOUSE_DATABASE || 'finscope'}`
   });
+  // Drain the response stream to prevent ECONNRESET warnings
+  stream.on('data', () => {});
+  await new Promise(resolve => stream.on('end', resolve));
   await initClient.close();
+}
+
+// ── Helper: exec and drain the response stream ──
+async function execAndDrain(ch, query, params = {}) {
+  const { stream } = await ch.exec({ query, query_params: params });
+  stream.on('data', () => {});
+  await new Promise(resolve => stream.on('end', resolve));
 }
 
 // ── Migrationları çalıştır ──
@@ -41,10 +52,10 @@ async function runMigrations() {
   for (const file of files) {
     const sql = readFileSync(join(dbDir, file), 'utf8');
     try {
-      await client.exec({ query: sql });
-      console.log(`✅ Migration: ${file}`);
+      await execAndDrain(client, sql);
+      logger.info({ file }, 'Migration applied');
     } catch (err) {
-      console.error(`❌ Migration failed: ${file}`, err.message);
+      logger.error({ err, file }, 'Migration failed');
     }
   }
 }
@@ -53,9 +64,9 @@ export async function initClickHouse() {
   try {
     await createDatabase();
     await runMigrations();
-    console.log('✅ ClickHouse ready');
+    logger.info('ClickHouse ready');
   } catch (err) {
-    console.error('❌ ClickHouse init failed:', err.message);
+    logger.error({ err }, 'ClickHouse init failed');
   }
 }
 
@@ -93,36 +104,15 @@ export async function insert(table, rows) {
 
 // ── DDL / tek seferlik sorgu ──
 export async function execute(sql, params = {}) {
-  await client.exec({
+  const { stream } = await client.exec({
     query: sql,
     query_params: params,
     clickhouse_settings: {
       mutations_sync: 1,
     },
   });
-}
-
-// ── Market verisini kaydetmek için yardımcı fonksiyon ──
-export async function insertMarketData(data) {
-  try {
-    await client.insert({
-      table: 'market_data',
-      values: [
-        {
-          symbol: data.symbol,
-          timestamp: data.timestamp,
-          open: parseFloat(data.open),
-          high: parseFloat(data.high),
-          low: parseFloat(data.low),
-          close: parseFloat(data.close),
-          volume: parseFloat(data.volume)
-        }
-      ],
-      format: 'JSONEachRow',
-    });
-  } catch (err) {
-    console.error('❌ ClickHouse MarketData Insert Error:', err.message);
-  }
+  stream.on('data', () => {});
+  await new Promise(resolve => stream.on('end', resolve));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -133,7 +123,7 @@ export async function getUserByEmail(email) {
   const result = await client.query({
     query: `
       SELECT *
-      FROM users
+      FROM users FINAL
       WHERE email = {email:String}
       LIMIT 1
     `,
@@ -149,7 +139,7 @@ export async function getUserById(userId) {
   const result = await client.query({
     query: `
       SELECT *
-      FROM users
+      FROM users FINAL
       WHERE id = {userId:String}
       LIMIT 1
     `,
@@ -184,7 +174,6 @@ export default {
   insert,
   execute,
   client,
-  insertMarketData,
   getUserByEmail,
   getUserById,
   createUser,

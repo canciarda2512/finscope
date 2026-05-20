@@ -1,6 +1,7 @@
 import Redis from 'ioredis';
 import '../config/env.js';
 import { insert } from './ClickHouseClient.js';
+import logger from '../utils/logger.js';
 
 const FLUSH_INTERVAL_MS = 5000; // batch insert every 5 seconds
 const CACHE_DEFAULT_TTL = 30;   // seconds
@@ -26,7 +27,7 @@ export async function initRedis() {
 
     redis.on('error', (err) => {
       if (connected) {
-        console.error('❌ Redis connection lost:', err.message);
+        logger.error({ err }, 'Redis connection lost');
         connected = false;
       }
     });
@@ -36,9 +37,9 @@ export async function initRedis() {
     });
 
     await redis.connect();
-    console.log('✅ Redis connected.');
+    logger.info('Redis connected');
   } catch (err) {
-    console.error('⚠️ Redis unavailable — using in-memory fallback:', err.message);
+    logger.warn({ err }, 'Redis unavailable — using in-memory fallback');
     connected = false;
   }
 
@@ -58,19 +59,26 @@ export async function bufferCandle(candle) {
   buffer.push(candle);
 }
 
+// Lua script: atomically read all items and delete the key in one round-trip.
+// Returns the list contents; if the key doesn't exist, returns an empty array.
+const DRAIN_SCRIPT = `
+  local items = redis.call('LRANGE', KEYS[1], 0, -1)
+  if #items > 0 then redis.call('DEL', KEYS[1]) end
+  return items
+`;
+
 async function flushBuffer() {
   let candles = [];
 
-  // Drain from Redis list
+  // Atomic drain: read + delete in a single Lua eval (crash-safe)
   if (connected) {
     try {
-      const items = await redis.lrange('finscope:candle_buffer', 0, -1);
-      if (items.length > 0) {
-        await redis.del('finscope:candle_buffer');
+      const items = await redis.eval(DRAIN_SCRIPT, 1, 'finscope:candle_buffer');
+      if (items && items.length > 0) {
         candles = items.map(item => JSON.parse(item));
       }
     } catch (err) {
-      console.error('Redis flush read error:', err.message);
+      logger.error({ err }, 'Redis flush read error');
     }
   }
 
@@ -85,7 +93,7 @@ async function flushBuffer() {
   try {
     await insert('market_data', candles);
   } catch (err) {
-    console.error('❌ Batch insert error:', err.message);
+    logger.error({ err }, 'Batch insert error');
     // Put them back so they aren't lost
     buffer = candles.concat(buffer);
   }
@@ -96,7 +104,7 @@ async function flushBuffer() {
 export async function setLatestPrice(symbol, price) {
   if (connected) {
     try {
-      await redis.set(`finscope:price:${symbol}`, String(price));
+      await redis.set(`finscope:price:${symbol}`, String(price), 'EX', 60);
       return;
     } catch { /* ignore */ }
   }
@@ -110,6 +118,22 @@ export async function getLatestPriceFromCache(symbol) {
     } catch { /* ignore */ }
   }
   return null;
+}
+
+export async function getLatestPricesFromCache(symbols) {
+  const result = new Map();
+  if (!connected || symbols.length === 0) return result;
+  try {
+    const keys = symbols.map(s => `finscope:price:${s}`);
+    const values = await redis.mget(...keys);
+    for (let i = 0; i < symbols.length; i++) {
+      if (values[i] !== null) {
+        const parsed = parseFloat(values[i]);
+        if (Number.isFinite(parsed)) result.set(symbols[i], parsed);
+      }
+    }
+  } catch { /* ignore */ }
+  return result;
 }
 
 // ── Generic Cache ──
@@ -164,6 +188,33 @@ export async function deleteOTP(userId) {
   _otpFallback.delete(userId);
 }
 
+// ── Distributed Lock (dedup for multi-instance) ──
+
+/**
+ * Try to acquire a short-lived lock for `key`.
+ * Returns true if acquired, false if another instance already holds it.
+ * Uses SET NX EX for atomic acquire + auto-expiry (no stale locks).
+ */
+export async function acquireLock(key, ttlSeconds = 10) {
+  if (!connected) return true; // single-instance fallback: always allow
+  try {
+    const result = await redis.set(`finscope:lock:${key}`, '1', 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  } catch {
+    return true; // Redis down: fall back to allowing the operation
+  }
+}
+
+/**
+ * Release a previously acquired lock.
+ */
+export async function releaseLock(key) {
+  if (!connected) return;
+  try {
+    await redis.del(`finscope:lock:${key}`);
+  } catch { /* ignore */ }
+}
+
 // ── Shutdown ──
 
 export async function shutdownRedis() {
@@ -179,10 +230,13 @@ export default {
   bufferCandle,
   setLatestPrice,
   getLatestPriceFromCache,
+  getLatestPricesFromCache,
   cacheGet,
   cacheSet,
   setOTP,
   getOTP,
   deleteOTP,
+  acquireLock,
+  releaseLock,
   shutdownRedis,
 };

@@ -1,17 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { CandlestickChart, MousePointer2, Minus, PencilLine, Wifi, WifiOff } from 'lucide-react';
 import APIClient from '../services/APIClient';
+import WebSocketClient from '../services/WebSocketClient';
 import ChartView from '../components/ChartView';
+import { useTheme } from '../context/ThemeContext';
 
-const SYMBOLS = [
-  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-  'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-  'TRXUSDT', 'MATICUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT',
-  'ATOMUSDT', 'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT',
-  'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
-];
-const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1D', '1W', '1M'];
-const INDICATORS = ['SMA', 'EMA', 'RSI', 'MACD', 'BB'];
+import { SYMBOLS, TIMEFRAMES, INDICATORS } from '../constants';
 const LAYOUTS = [
   { id: 1, label: 'Single Chart' },
   { id: 2, label: '2 Charts' },
@@ -29,26 +23,16 @@ function formatSymbol(symbol) {
 }
 
 export default function MultiChartPage() {
+  const { theme } = useTheme();
   const [layout, setLayout] = useState(1);
-  const [connected, setConnected] = useState(false);
-  const socketRef = useRef(null);
+  const [connected, setConnected] = useState(WebSocketClient.isConnected());
 
   useEffect(() => {
-    const socket = new WebSocket('ws://localhost:4000');
-    socket.onopen = () => setConnected(true);
-    socket.onclose = () => setConnected(false);
-    socket.onerror = () => setConnected(false);
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        window.dispatchEvent(new CustomEvent('multi-chart:kline', { detail: msg }));
-      } catch (err) {
-        console.warn('Multi-chart websocket parse error:', err);
-      }
-    };
-
-    socketRef.current = socket;
-    return () => socket.close();
+    const unsubStatus = WebSocketClient.onStatus(setConnected);
+    const unsubMessages = WebSocketClient.subscribe((msg) => {
+      window.dispatchEvent(new CustomEvent('multi-chart:kline', { detail: msg }));
+    });
+    return () => { unsubStatus(); unsubMessages(); };
   }, []);
 
   const visiblePanels = DEFAULT_PANELS.slice(0, layout);
@@ -88,7 +72,7 @@ export default function MultiChartPage() {
             ))}
           </div>
 
-          <div className={`flex items-center gap-2 text-xs font-bold ${connected ? 'text-emerald-400' : 'text-slate-500'}`}>
+          <div className="flex items-center gap-2 text-xs font-bold" style={{ color: connected ? 'var(--green)' : 'var(--text-dim)' }}>
             {connected ? <Wifi size={15} /> : <WifiOff size={15} />}
             {connected ? 'Shared WebSocket Active' : 'Connecting'}
           </div>
@@ -104,6 +88,7 @@ export default function MultiChartPage() {
             defaultTimeframe={panel.timeframe}
             compact={layout === 4}
             title={`Panel ${index + 1}`}
+            theme={theme}
           />
         ))}
       </div>
@@ -117,6 +102,7 @@ const MultiChartPanel = memo(function MultiChartPanel({
   defaultTimeframe,
   compact,
   title,
+  theme,
 }) {
   const [symbol, setSymbol] = useState(defaultSymbol);
   const [timeframe, setTimeframe] = useState(defaultTimeframe);
@@ -287,7 +273,7 @@ const MultiChartPanel = memo(function MultiChartPanel({
 
       <div className="p-2">
         <ChartView
-          key={`${panelId}-${symbol}-${timeframe}`}
+          key={`${panelId}-${symbol}-${timeframe}-${theme}`}
           candles={candles}
           liveCandle={liveCandle}
           timeframe={timeframe}
@@ -295,6 +281,7 @@ const MultiChartPanel = memo(function MultiChartPanel({
           savedDrawings={drawings}
           indicators={enabledIndicators}
           height={chartHeight}
+          theme={theme}
         />
       </div>
 

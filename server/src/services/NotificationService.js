@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { execute, insert, query } from './ClickHouseClient.js';
+import logger from '../utils/logger.js';
 
 let publishNotification = null;
 
@@ -28,9 +29,9 @@ export async function createNotification({ userId, type, title, message, symbol 
     createdAt: nowClickHouse(),
   };
 
-  console.log(`[Notification] Creating: type=${type} userId=${userId} id=${id}`);
+  logger.debug({ type, userId, id }, 'Creating notification');
   await insert('notifications', [notification]);
-  console.log(`[Notification] Inserted: ${id}`);
+  logger.debug({ id }, 'Notification inserted');
 
   if (publishNotification) {
     publishNotification(notification);
@@ -44,18 +45,20 @@ export async function createNotification({ userId, type, title, message, symbol 
  * Returns notifications array + current unread count.
  */
 export async function getNotifications(userId, limit = 30) {
-  const { rows } = await query(
-    `
-    SELECT id, type, title, message, symbol, isRead, createdAt
-    FROM notifications FINAL
-    WHERE userId = {userId:String}
-    ORDER BY createdAt DESC
-    LIMIT {limit:UInt32}
-    `,
-    { userId, limit }
-  );
+  const [{ rows }, unreadCount] = await Promise.all([
+    query(
+      `
+      SELECT id, type, title, message, symbol, isRead, createdAt
+      FROM notifications FINAL
+      WHERE userId = {userId:String}
+      ORDER BY createdAt DESC
+      LIMIT {limit:UInt32}
+      `,
+      { userId, limit }
+    ),
+    getUnreadCount(userId),
+  ]);
 
-  const unreadCount = rows.filter(r => Number(r.isRead) === 0).length;
   return { notifications: rows, unreadCount };
 }
 

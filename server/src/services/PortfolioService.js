@@ -1,10 +1,10 @@
 import crypto from 'crypto';
 import { execute, insert, query } from './ClickHouseClient.js';
 import { createNotification } from './NotificationService.js';
-import { getLatestPriceFromCache } from './RedisBuffer.js';
+import { getLatestPriceFromCache, getLatestPricesFromCache, acquireLock, releaseLock } from './RedisBuffer.js';
+import logger from '../utils/logger.js';
 
 export const DEMO_START_BALANCE = 100000;
-const processingLimitOrderIds = new Set();
 
 function nowClickHouse() {
   return new Date().toISOString().replace('T', ' ').replace('Z', '');
@@ -13,6 +13,44 @@ function nowClickHouse() {
 function toNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+// Peak-to-trough max drawdown from the REALIZED PnL trajectory.
+function calculateMaxDrawdown(sellTrades, startBalance) {
+  if (!sellTrades || sellTrades.length === 0) return 0;
+
+  let cumulativePnL = 0;
+  let peakEquity    = startBalance;
+  let maxDD         = 0;
+
+  for (const trade of sellTrades) {
+    const pnl = Number(trade.realizedPnL ?? 0);
+    cumulativePnL   += pnl;
+    const equity     = startBalance + cumulativePnL;
+    if (equity > peakEquity) peakEquity = equity;
+    if (peakEquity > 0) {
+      const dd = ((peakEquity - equity) / peakEquity) * 100;
+      if (dd > maxDD) maxDD = dd;
+    }
+  }
+
+  return maxDD;
+}
+
+// Per-trade Sharpe ratio from realized return percentages.
+function calculateSharpeRatio(enrichedTrades) {
+  const returns = enrichedTrades
+    .filter(t => t.type === 'sell' && t.realizedPnLPercent != null)
+    .map(t => toNumber(t.realizedPnLPercent) / 100);
+
+  if (returns.length < 2) return 0;
+
+  const n    = returns.length;
+  const mean = returns.reduce((s, r) => s + r, 0) / n;
+  const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / (n - 1);
+  const std  = Math.sqrt(variance);
+
+  return std > 0 ? mean / std : 0;
 }
 
 function calculateRealizedPnL(trades) {
@@ -129,6 +167,38 @@ export async function getLatestPrice(symbol) {
   return rows[0] ? toNumber(rows[0].close) : null;
 }
 
+async function getLatestPrices(symbols) {
+  const normalized = symbols.map(s => String(s || '').toUpperCase()).filter(Boolean);
+  if (normalized.length === 0) return new Map();
+
+  // 1. Batch check Redis cache (single MGET)
+  const priceMap = await getLatestPricesFromCache(normalized);
+
+  // 2. Find cache misses and fetch from ClickHouse in a single query
+  const misses = normalized.filter(s => !priceMap.has(s));
+  if (misses.length > 0) {
+    const placeholders = misses.map((_, i) => `{s${i}:String}`).join(', ');
+    const params = Object.fromEntries(misses.map((s, i) => [`s${i}`, s]));
+
+    const { rows } = await query(
+      `
+      SELECT symbol, argMax(close, timestamp) AS close
+      FROM market_data
+      WHERE symbol IN (${placeholders})
+      GROUP BY symbol
+      `,
+      params
+    );
+
+    for (const row of rows) {
+      const price = toNumber(row.close);
+      if (price > 0) priceMap.set(row.symbol, price);
+    }
+  }
+
+  return priceMap;
+}
+
 export async function getPositions(userId) {
   const { rows } = await query(
     `
@@ -148,7 +218,7 @@ export async function getTrades(userId) {
   const { rows } = await query(
     `
     SELECT *
-    FROM trades
+    FROM trades FINAL
     WHERE userId = {userId:String}
     ORDER BY timestamp DESC
     `,
@@ -174,7 +244,7 @@ export async function getOpenLimitOrders(userId) {
 }
 
 export async function createLimitOrder({ userId, symbol, type, targetPrice, quantity }) {
-  await ensurePortfolio(userId);
+  const portfolio = await ensurePortfolio(userId);
 
   const normalizedSymbol = String(symbol || '').toUpperCase();
   const normalizedType = String(type || '').toLowerCase();
@@ -187,7 +257,6 @@ export async function createLimitOrder({ userId, symbol, type, targetPrice, quan
   if (qty <= 0) throw new Error('Quantity must be positive');
 
   if (normalizedType === 'buy') {
-    const portfolio = await ensurePortfolio(userId);
     const cost = price * qty;
     if (toNumber(portfolio.balance) < cost) throw new Error('Insufficient demo balance');
   } else {
@@ -264,53 +333,92 @@ export async function executeTrade({ userId, symbol, type, price, quantity }) {
   const currentEntry = toNumber(existingPosition?.entryPrice);
   const currentBalance = toNumber(portfolio.balance);
 
-  let nextBalance = currentBalance;
-  let nextQty = currentQty;
-  let nextEntry = currentEntry;
-
   if (normalizedType === 'buy') {
     if (currentBalance < total) throw new Error('Insufficient demo balance');
 
-    nextBalance = currentBalance - total;
-    nextQty = currentQty + qty;
-    nextEntry = nextQty > 0
+    // Atomic balance deduction
+    await execute(
+      `
+      ALTER TABLE portfolios
+      UPDATE balance = balance - {cost:Float64}
+      WHERE userId = {userId:String}
+      `,
+      { userId, cost: total }
+    );
+
+    // Verify balance didn't go negative (concurrent trade race)
+    const { rows: checkRows } = await query(
+      `SELECT balance FROM portfolios FINAL WHERE userId = {userId:String} LIMIT 1`,
+      { userId }
+    );
+    if (toNumber(checkRows[0]?.balance) < 0) {
+      // Revert the deduction
+      await execute(
+        `ALTER TABLE portfolios UPDATE balance = balance + {cost:Float64} WHERE userId = {userId:String}`,
+        { userId, cost: total }
+      );
+      throw new Error('Insufficient demo balance');
+    }
+
+    const nextQty = currentQty + qty;
+    const nextEntry = nextQty > 0
       ? ((currentQty * currentEntry) + total) / nextQty
       : executionPrice;
+
+    if (existingPosition) {
+      await execute(
+        `
+        ALTER TABLE positions
+        UPDATE quantity = {quantity:Float64},
+               entryPrice = {entryPrice:Float64}
+        WHERE userId = {userId:String}
+          AND symbol = {symbol:String}
+        `,
+        { userId, symbol: normalizedSymbol, quantity: nextQty, entryPrice: nextEntry }
+      );
+    } else {
+      await insert('positions', [{
+        userId,
+        symbol: normalizedSymbol,
+        quantity: nextQty,
+        entryPrice: nextEntry,
+      }]);
+    }
   } else {
     if (currentQty < qty) throw new Error('Insufficient position quantity');
 
-    nextBalance = currentBalance + total;
-    nextQty = currentQty - qty;
-    nextEntry = nextQty > 0 ? currentEntry : 0;
-  }
-
-  await execute(
-    `
-    ALTER TABLE portfolios
-    UPDATE balance = {balance:Float64}
-    WHERE userId = {userId:String}
-    `,
-    { userId, balance: nextBalance }
-  );
-
-  if (existingPosition) {
+    // Atomic balance credit
     await execute(
       `
-      ALTER TABLE positions
-      UPDATE quantity = {quantity:Float64},
-             entryPrice = {entryPrice:Float64}
+      ALTER TABLE portfolios
+      UPDATE balance = balance + {revenue:Float64}
       WHERE userId = {userId:String}
-        AND symbol = {symbol:String}
       `,
-      { userId, symbol: normalizedSymbol, quantity: nextQty, entryPrice: nextEntry }
+      { userId, revenue: total }
     );
-  } else {
-    await insert('positions', [{
-      userId,
-      symbol: normalizedSymbol,
-      quantity: nextQty,
-      entryPrice: nextEntry,
-    }]);
+
+    const nextQty = currentQty - qty;
+    const nextEntry = nextQty > 0 ? currentEntry : 0;
+
+    if (existingPosition) {
+      await execute(
+        `
+        ALTER TABLE positions
+        UPDATE quantity = {quantity:Float64},
+               entryPrice = {entryPrice:Float64}
+        WHERE userId = {userId:String}
+          AND symbol = {symbol:String}
+        `,
+        { userId, symbol: normalizedSymbol, quantity: nextQty, entryPrice: nextEntry }
+      );
+    } else {
+      await insert('positions', [{
+        userId,
+        symbol: normalizedSymbol,
+        quantity: nextQty,
+        entryPrice: nextEntry,
+      }]);
+    }
   }
 
   const trade = {
@@ -352,8 +460,10 @@ export async function executeTriggeredLimitOrders(symbol, currentPrice) {
   const executed = [];
 
   for (const order of orders) {
-    if (processingLimitOrderIds.has(order.id)) continue;
-    processingLimitOrderIds.add(order.id);
+    // Distributed lock: prevents duplicate execution across multiple instances
+    const lockKey = `limit-order:${order.id}`;
+    const acquired = await acquireLock(lockKey, 30);
+    if (!acquired) continue;
 
     try {
       const trade = await executeTrade({
@@ -385,32 +495,84 @@ export async function executeTriggeredLimitOrders(symbol, currentPrice) {
         title: 'Limit Order Filled',
         message: `${order.type.toUpperCase()} ${Number(order.quantity).toFixed(6)} ${order.symbol.replace('USDT', '')} at $${price.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
         symbol: order.symbol,
-      }).catch(err => console.error('Notification error (limit order):', err.message));
+      }).catch(err => logger.error({ err }, 'Notification error (limit order)'));
     } catch (err) {
-      console.error(`Limit order execution failed (${order.id}):`, err.message);
-      processingLimitOrderIds.delete(order.id);
+      logger.error({ err, orderId: order.id }, 'Limit order execution failed');
+
+      // Mark as failed so it's not retried on every tick
+      await execute(
+        `
+        ALTER TABLE limit_orders
+        UPDATE status = 'failed'
+        WHERE userId = {userId:String}
+          AND id = {id:String}
+          AND status = 'pending'
+        `,
+        { userId: order.userId, id: order.id }
+      ).catch(failErr => logger.error({ err: failErr, orderId: order.id }, 'Failed to mark order as failed'));
+
+      createNotification({
+        userId: order.userId,
+        type: 'limit_order_triggered',
+        title: 'Limit Order Failed',
+        message: `${order.type.toUpperCase()} ${Number(order.quantity).toFixed(6)} ${order.symbol.replace('USDT', '')} failed: ${err.message}`,
+        symbol: order.symbol,
+      }).catch(() => {});
+    } finally {
+      await releaseLock(lockKey);
     }
   }
 
   return executed;
 }
 
-export async function getPortfolioSnapshot(userId) {
-  const portfolio = await ensurePortfolio(userId);
-  const positions = await getPositions(userId);
-  const trades = await getTrades(userId);
+export async function getEnrichedPositions(userId) {
+  const [positions, trades] = await Promise.all([getPositions(userId), getTrades(userId)]);
   const realized = calculateRealizedPnL(trades);
+
+  const priceMap = await getLatestPrices(positions.map(p => p.symbol));
+
+  return positions.map(position => {
+    const currentPrice = priceMap.get(position.symbol) || toNumber(position.entryPrice);
+    const quantity = toNumber(position.quantity);
+    const avgCost = realized.avgCosts.get(position.symbol)?.avgCost
+      ?? toNumber(position.entryPrice);
+    const value = quantity * currentPrice;
+    const pnl = (currentPrice - avgCost) * quantity;
+
+    return {
+      ...position,
+      avgCost,
+      currentPrice,
+      value,
+      pnl,
+      pnlPercent: avgCost > 0 ? ((currentPrice - avgCost) / avgCost) * 100 : 0,
+    };
+  });
+}
+
+export async function getEnrichedTrades(userId) {
+  const trades = await getTrades(userId);
+  return calculateRealizedPnL(trades).trades;
+}
+
+export async function getPortfolioSnapshot(userId) {
+  const [portfolio, positions, trades] = await Promise.all([
+    ensurePortfolio(userId),
+    getPositions(userId),
+    getTrades(userId),
+  ]);
+  const realized = calculateRealizedPnL(trades);
+
+  const priceMap = await getLatestPrices(positions.map(p => p.symbol));
 
   const enrichedPositions = [];
   let positionsValue = 0;
   let unrealizedPnL = 0;
 
   for (const position of positions) {
-    const latestPrice = await getLatestPrice(position.symbol);
-    const currentPrice = latestPrice || toNumber(position.entryPrice);
+    const currentPrice = priceMap.get(position.symbol) || toNumber(position.entryPrice);
     const quantity = toNumber(position.quantity);
-    // Use avgCost from trade replay as authoritative cost basis;
-    // fall back to DB entryPrice only if no trade history exists.
     const avgCost = realized.avgCosts.get(position.symbol)?.avgCost
       ?? toNumber(position.entryPrice);
     const value = quantity * currentPrice;
@@ -444,17 +606,27 @@ export async function getPortfolioSnapshot(userId) {
     unrealizedPnL,
     closedTrades: realized.closedTrades,
     winningTrades: realized.winningTrades,
-    sharpeRatio: toNumber(portfolio.sharpeRatio),
-    maxDrawdown: toNumber(portfolio.maxDrawdown),
-    winRate: realized.winRate,
+    winRate: realized.closedTrades > 0
+      ? (realized.winningTrades / realized.closedTrades) * 100
+      : 0,
+    maxDrawdown: calculateMaxDrawdown(
+      [...realized.trades]
+        .filter(t => t.type === 'sell' && t.realizedPnL != null)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()),
+      DEMO_START_BALANCE
+    ),
+    sharpeRatio: calculateSharpeRatio(realized.trades),
     positions: enrichedPositions,
     trades: realized.trades,
   };
 }
 
 export async function getPerformanceDatapoints(userId) {
-  const snapshot = await getPortfolioSnapshot(userId);
-  const ascendingTrades = [...snapshot.trades].sort((a, b) => (
+  const [portfolio, trades] = await Promise.all([
+    ensurePortfolio(userId),
+    getTrades(userId),
+  ]);
+  const ascendingTrades = [...trades].sort((a, b) => (
     new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   ));
   const positionsBySymbol = new Map();
@@ -503,9 +675,18 @@ export async function getPerformanceDatapoints(userId) {
     });
   }
 
+  // Fetch live prices only for symbols still held (single batch query)
+  const heldSymbols = [...positionsBySymbol.entries()]
+    .filter(([, qty]) => qty > 0)
+    .map(([symbol]) => symbol);
+  const livePrices = await getLatestPrices(heldSymbols);
+  for (const [symbol, price] of livePrices) {
+    lastPriceBySymbol.set(symbol, price);
+  }
+
   datapoints.push({
     date: 'Now',
-    value: snapshot.totalValue,
+    value: calculateEquity(),
     label: 'Now',
   });
 
@@ -523,6 +704,8 @@ export default {
   cancelLimitOrder,
   executeTrade,
   executeTriggeredLimitOrders,
+  getEnrichedPositions,
+  getEnrichedTrades,
   getPortfolioSnapshot,
   getPerformanceDatapoints,
 };

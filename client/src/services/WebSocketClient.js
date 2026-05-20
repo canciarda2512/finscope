@@ -1,8 +1,9 @@
-const WS_URL = 'ws://localhost:4000';
+export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4000';
 
 let socket = null;
 let reconnectTimer = null;
 const listeners = new Set();
+const statusListeners = new Set();
 
 function getToken() {
   return localStorage.getItem('accessToken');
@@ -19,6 +20,7 @@ function connect() {
 
   socket.onopen = () => {
     clearTimeout(reconnectTimer);
+    statusListeners.forEach(fn => { try { fn(true); } catch (_) {} });
   };
 
   socket.onmessage = (event) => {
@@ -35,6 +37,7 @@ function connect() {
   };
 
   socket.onclose = () => {
+    statusListeners.forEach(fn => { try { fn(false); } catch (_) {} });
     // Reconnect after 5 seconds if there are still active subscribers
     if (listeners.size > 0) {
       reconnectTimer = setTimeout(connect, 5000);
@@ -74,5 +77,20 @@ function reconnectWithToken() {
   if (listeners.size > 0) connect();
 }
 
-const WebSocketClient = { subscribe, reconnectWithToken };
+/**
+ * Subscribe to connection status changes (true = open, false = closed).
+ * Returns an unsubscribe function.
+ */
+function onStatus(listener) {
+  statusListeners.add(listener);
+  // Immediately notify current state
+  if (socket && socket.readyState === WebSocket.OPEN) listener(true);
+  return () => statusListeners.delete(listener);
+}
+
+function isConnected() {
+  return socket != null && socket.readyState === WebSocket.OPEN;
+}
+
+const WebSocketClient = { subscribe, reconnectWithToken, onStatus, isConnected };
 export default WebSocketClient;

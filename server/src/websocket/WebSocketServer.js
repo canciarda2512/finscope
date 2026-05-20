@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import '../config/env.js';
 import { setNotificationPublisher } from '../services/NotificationService.js';
 import { startPriceStreamer } from '../background/PriceStreamer.js';
+import logger from '../utils/logger.js';
 
 const setupWebSocketServer = (server) => {
     const wss = new WSS({ server });
@@ -35,14 +36,14 @@ const setupWebSocketServer = (server) => {
             const token = url.searchParams.get('token');
             if (token) {
                 const payload = jwt.verify(token, process.env.JWT_SECRET);
-                ws.userId = payload.userId;
+                ws.userId = payload.purpose ? null : payload.userId;
             }
         } catch {
             ws.userId = null;
         }
     });
 
-    console.log('🚀 WebSocket server ready.');
+    logger.info('WebSocket server ready');
 };
 
 export default setupWebSocketServer;

@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import { query, insert, execute } from '../services/ClickHouseClient.js';
 
 const router = Router();
+import { validateSymbol, validatePositiveNumber, validateEnum } from '../utils/validation.js';
+
 const CONDITIONS = new Set(['>', '<']);
 
 function formatClickHouseDate(date = new Date()) {
@@ -41,17 +43,17 @@ router.post('/', async (req, res, next) => {
   try {
     const userId = req.userId;
     const { symbol, condition, targetPrice } = req.body;
-    const normalizedSymbol = String(symbol || '').toUpperCase().trim();
-    const price = Number(targetPrice);
+    const normalizedSymbol = validateSymbol(symbol);
+    const price = validatePositiveNumber(targetPrice);
 
     if (!normalizedSymbol) {
-      return res.status(400).json({ message: 'Symbol zorunlu' });
+      return res.status(400).json({ message: 'Invalid or unsupported symbol' });
     }
-    if (!CONDITIONS.has(condition)) {
-      return res.status(400).json({ message: 'Condition > veya < olmalı' });
+    if (!validateEnum(condition, CONDITIONS)) {
+      return res.status(400).json({ message: 'Condition must be > or <' });
     }
-    if (!Number.isFinite(price) || price <= 0) {
-      return res.status(400).json({ message: 'Target price geçerli olmalı' });
+    if (price === null) {
+      return res.status(400).json({ message: 'Target price must be a valid positive number' });
     }
 
     const alert = {

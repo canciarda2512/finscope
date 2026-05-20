@@ -2,34 +2,8 @@
 import {
   ArrowDownRight, ArrowUpRight, ExternalLink, Plus, Star, Trash2
 } from 'lucide-react';
-
-export const ASSET_NAMES = {
-  BTCUSDT: 'Bitcoin',
-  ETHUSDT: 'Ethereum',
-  SOLUSDT: 'Solana',
-  BNBUSDT: 'BNB',
-  XRPUSDT: 'XRP',
-  ADAUSDT: 'Cardano',
-  DOGEUSDT: 'Dogecoin',
-  AVAXUSDT: 'Avalanche',
-  LINKUSDT: 'Chainlink',
-  DOTUSDT: 'Polkadot',
-  TRXUSDT: 'TRON',
-  MATICUSDT: 'Polygon',
-  LTCUSDT: 'Litecoin',
-  BCHUSDT: 'Bitcoin Cash',
-  UNIUSDT: 'Uniswap',
-  ATOMUSDT: 'Cosmos',
-  ETCUSDT: 'Ethereum Classic',
-  APTUSDT: 'Aptos',
-  ARBUSDT: 'Arbitrum',
-  OPUSDT: 'Optimism',
-  NEARUSDT: 'NEAR',
-  INJUSDT: 'Injective',
-  SUIUSDT: 'Sui',
-  SEIUSDT: 'Sei',
-  FILUSDT: 'Filecoin',
-};
+import { SYMBOL_NAMES as ASSET_NAMES } from '../constants';
+export { ASSET_NAMES };
 
 export function money(value) {
   const price = Number(value || 0);
@@ -98,7 +72,7 @@ function WatchlistRow({ asset, onOpenChart, onRemove }) {
       <td className="px-6 py-5 text-right font-mono font-bold tracking-tighter" style={{ color: 'var(--text-primary)' }}>
         ${money(asset.price)}
       </td>
-      <td className={`px-6 py-5 text-right font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+      <td className="px-6 py-5 text-right font-bold" style={{ color: up ? 'var(--green)' : 'var(--red)' }}>
         <div className="flex items-center justify-end gap-1">
           {up ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
           {pct(asset.change24h)}
@@ -111,8 +85,8 @@ function WatchlistRow({ asset, onOpenChart, onRemove }) {
         <Sparkline data={asset.sparkline} up={up} />
       </td>
       <td className="px-6 py-5 text-right">
-        <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase ${asset.lastTickAt ? 'text-emerald-400' : 'text-slate-600'}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${asset.lastTickAt ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase" style={{ color: asset.lastTickAt ? 'var(--green)' : 'var(--text-dim)' }}>
+          <span className={`h-1.5 w-1.5 rounded-full ${asset.lastTickAt ? 'animate-pulse' : ''}`} style={{ backgroundColor: asset.lastTickAt ? 'var(--green)' : 'var(--text-dim)' }} />
           {asset.lastTickAt ? 'Live' : 'Snapshot'}
         </span>
       </td>

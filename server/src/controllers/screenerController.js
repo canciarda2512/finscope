@@ -2,16 +2,13 @@ import { Router } from 'express';
 import { query } from '../services/ClickHouseClient.js';
 import { fetch24hTickers, fetchKlines } from '../services/BinanceService.js';
 
+import { SYMBOLS as SCREENER_SYMBOLS } from '../config/constants.js';
+import responseCache from '../middleware/responseCache.js';
+import { validateEnum, clampNumber } from '../utils/validation.js';
+
 const router = Router();
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 25;
-const SCREENER_SYMBOLS = [
-  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-  'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-  'TRXUSDT', 'MATICUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT',
-  'ATOMUSDT', 'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT',
-  'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
-];
 const TABS = new Set([
   'top-gainers',
   'top-losers',
@@ -21,9 +18,7 @@ const TABS = new Set([
 ]);
 
 function parseLimit(value) {
-  const limit = Number(value || DEFAULT_LIMIT);
-  if (!Number.isFinite(limit) || limit <= 0) return DEFAULT_LIMIT;
-  return Math.min(Math.floor(limit), MAX_LIMIT);
+  return clampNumber(value, 1, MAX_LIMIT, DEFAULT_LIMIT);
 }
 
 function mapRow(row) {
@@ -203,12 +198,13 @@ async function getRsiRows(tab, limit) {
         close,
         row_number() OVER (PARTITION BY symbol ORDER BY timestamp DESC) AS rn
       FROM market_data
+      WHERE timestamp >= now() - INTERVAL 24 HOUR
     ),
     diffs AS (
       SELECT
         symbol,
         timestamp,
-        close - lagInFrame(close) OVER (
+        close - lagInFrame(close, 1, close) OVER (
           PARTITION BY symbol
           ORDER BY timestamp ASC
           ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
@@ -251,12 +247,12 @@ async function getRsiRows(tab, limit) {
   return result;
 }
 
-router.get('/', async (req, res, next) => {
+router.get('/', responseCache(15), async (req, res, next) => {
   const startedAt = Date.now();
   const tab = String(req.query.tab || 'top-gainers');
   const limit = parseLimit(req.query.limit);
 
-  if (!TABS.has(tab)) {
+  if (!validateEnum(tab, TABS)) {
     return res.status(400).json({ message: 'Unsupported screener tab' });
   }
 

@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Play, Power, PowerOff, ChevronDown } from 'lucide-react';
 import APIClient from '../services/APIClient';
+import { SYMBOLS } from '../constants';
 
 const CONDITION_TYPES = [
   { value: 'indicator', label: 'Technical Indicator' },
@@ -31,10 +32,6 @@ const ACTION_TYPES = [
   { value: 'close_position', label: 'Close Position' },
 ];
 
-const SYMBOLS = [
-  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-  'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-];
 
 function emptyCondition() {
   return { type: 'indicator', parameter: 'RSI14', operator: '<', value: 30 };
@@ -51,6 +48,7 @@ export default function StrategyPage() {
   // Create form
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
+  const [createSymbol, setCreateSymbol] = useState('BTCUSDT');
   const [conditions, setConditions] = useState([emptyCondition()]);
   const [actions, setActions] = useState([emptyAction()]);
   const [creating, setCreating] = useState(false);
@@ -78,8 +76,9 @@ export default function StrategyPage() {
     if (!name.trim()) return;
     setCreating(true);
     try {
-      await APIClient.post('/strategy', { name, conditions, actions });
+      await APIClient.post('/strategy', { name, symbol: createSymbol, conditions, actions });
       setName('');
+      setCreateSymbol('BTCUSDT');
       setConditions([emptyCondition()]);
       setActions([emptyAction()]);
       setShowCreate(false);
@@ -180,13 +179,23 @@ export default function StrategyPage() {
       {/* ── Create Form ── */}
       {showCreate && (
         <div className="rounded-xl p-5 space-y-4" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
-          <input
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="Strategy name"
-            className="w-full rounded-lg px-3 py-2 text-sm outline-none"
-            style={inputStyle}
-          />
+          <div className="flex gap-2">
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="Strategy name"
+              className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+              style={inputStyle}
+            />
+            <select
+              value={createSymbol}
+              onChange={e => setCreateSymbol(e.target.value)}
+              className="rounded-lg px-3 py-2 text-sm outline-none"
+              style={inputStyle}
+            >
+              {SYMBOLS.map(sym => <option key={sym} value={sym}>{sym.replace('USDT', '/USDT')}</option>)}
+            </select>
+          </div>
 
           {/* Conditions */}
           <div>
@@ -287,6 +296,10 @@ export default function StrategyPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{s.name}</h2>
+              <span className="text-xs px-2 py-0.5 rounded-full font-mono"
+                style={{ backgroundColor: 'var(--accent-muted)', color: 'var(--accent-text)' }}>
+                {(s.symbol || 'BTCUSDT').replace('USDT', '/USDT')}
+              </span>
               <span className="text-xs px-2 py-0.5 rounded-full"
                 style={{ backgroundColor: s.isActive ? 'var(--green-muted)' : 'var(--bg-hover)', color: s.isActive ? 'var(--green)' : 'var(--text-muted)' }}>
                 {s.isActive ? 'Active' : 'Inactive'}

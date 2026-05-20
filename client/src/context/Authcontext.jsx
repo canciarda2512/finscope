@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import APIClient from '../services/APIClient';
 import TokenManager from '../services/TokenManager';
+import WebSocketClient from '../services/WebSocketClient';
 
 const AuthContext = createContext();
 
@@ -43,14 +44,23 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('auth:expired', handleExpiredAuth);
   }, [navigate]);
 
-  const login = (userData, accessToken, refreshToken) => {
+  const login = async (userData, accessToken, refreshToken) => {
     TokenManager.setTokens(accessToken, refreshToken);
+    WebSocketClient.reconnectWithToken();
+    // Set provisional user data immediately, then fetch real profile
     setUser(userData);
     navigate('/');
+    try {
+      const res = await APIClient.get('/auth/me');
+      setUser(res.data.user);
+    } catch {
+      // Keep provisional data if /auth/me fails
+    }
   };
 
   const logout = () => {
     TokenManager.clear();
+    WebSocketClient.reconnectWithToken();
     setUser(null);
     navigate('/login');
   };

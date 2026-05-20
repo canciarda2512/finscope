@@ -1,8 +1,11 @@
 import { Router } from 'express';
-import { query } from '../services/ClickHouseClient.js';
+import logger from '../utils/logger.js';
+import { query, insert, execute } from '../services/ClickHouseClient.js';
 import * as IndicatorCalculator from '../services/IndicatorCalculator.js';
 import authMiddleware from '../middleware/authMiddleware.js';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
+import responseCache from '../middleware/responseCache.js';
 
 const router = Router();
 
@@ -16,53 +19,36 @@ function getOptionalUserId(req) {
   try {
     const token = authHeader.split(' ')[1];
     const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.purpose) return null;
     return payload.userId;
   } catch {
     return null;
   }
 }
 
-// ── Timeframe maps ──
-const TF_INTERVAL = {
-  '1m': 'toStartOfMinute(timestamp)',
-  '5m': 'toStartOfFiveMinute(timestamp)',
-  '1D': 'toStartOfDay(timestamp)',
-  '1W': 'toStartOfWeek(timestamp)',
-  '1M': 'toStartOfMonth(timestamp)',
-};
+import { TF_INTERVAL, TF_LIMIT, DAILY_TF, TIMEFRAMES } from '../config/constants.js';
+import { validateSymbol, validateEnum } from '../utils/validation.js';
 
-const TF_LIMIT = {
-  '1m': 100,
-  '5m': 200,
-  '1D': 150,
-  '1W': 70,
-  '1M': 30,
-};
+const tableFor = tf => DAILY_TF.has(tf) ? 'market_data_daily' : 'market_data';
 
 // ── Validation helper ──
 function validateParams(symbol, timeframe, res) {
-  const ALLOWED_SYMBOLS = [
-    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-    'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-    'TRXUSDT', 'MATICUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT',
-    'ATOMUSDT', 'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT',
-    'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
-  ];
-  const ALLOWED_TF = Object.keys(TF_INTERVAL);
-
-  if (!ALLOWED_SYMBOLS.includes(symbol.toUpperCase())) {
-    res.status(400).json({ error: `Geçersiz sembol: ${symbol}` });
+  if (!validateSymbol(symbol)) {
+    res.status(400).json({ error: `Invalid symbol: ${symbol}` });
     return false;
   }
-  if (!ALLOWED_TF.includes(timeframe)) {
-    res.status(400).json({ error: `Geçersiz timeframe: ${timeframe}. Desteklenen: ${ALLOWED_TF.join(', ')}` });
+  if (!validateEnum(timeframe, TIMEFRAMES)) {
+    res.status(400).json({ error: `Invalid timeframe: ${timeframe}. Supported: ${TIMEFRAMES.join(', ')}` });
     return false;
   }
   return true;
 }
 
 // ── GET /api/chart/candles ──
-router.get('/candles', async (req, res) => {
+router.get('/candles', responseCache(
+  (req) => DAILY_TF.has(req.query.timeframe || '5m') ? 60 : 10,
+  (req) => `resp:candles:${req.query.symbol || 'BTCUSDT'}:${req.query.timeframe || '5m'}`,
+), async (req, res) => {
   const { symbol = 'BTCUSDT', timeframe = '5m' } = req.query;
 
   if (!validateParams(symbol, timeframe, res)) return;
@@ -81,7 +67,7 @@ router.get('/candles', async (req, res) => {
         min(low)                     AS low,
         argMax(close,  timestamp)    AS close,
         sum(volume)                  AS volume
-      FROM market_data
+      FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
@@ -112,20 +98,23 @@ router.get('/candles', async (req, res) => {
       rowsScanned: rowsRead,
     });
   } catch (err) {
-    console.error('❌ Chart candles error:', err);
-    return res.status(500).json({ error: 'Veritabanından mum verileri çekilemedi.' });
+    logger.error({ err }, 'Chart candles error');
+    return res.status(500).json({ error: 'Failed to fetch candle data from database.' });
   }
 });
 
 // ── GET /api/chart/indicators ──
-router.get('/indicators', async (req, res) => {
+router.get('/indicators', responseCache(
+  (req) => DAILY_TF.has(req.query.timeframe || '1D') ? 60 : 15,
+  (req) => `resp:ind:${req.query.symbol || 'BTCUSDT'}:${req.query.timeframe || '1D'}:${req.query.type || 'SMA'}:${req.query.period || 20}`,
+), async (req, res) => {
   const { symbol = 'BTCUSDT', timeframe = '1D', type = 'SMA', period = 20 } = req.query;
 
   if (!validateParams(symbol, timeframe, res)) return;
 
   const ALLOWED_TYPES = ['SMA', 'EMA', 'RSI', 'MACD', 'BB'];
   if (!ALLOWED_TYPES.includes(type.toUpperCase())) {
-    return res.status(400).json({ error: `Geçersiz indikatör tipi: ${type}` });
+    return res.status(400).json({ error: `Invalid indicator type: ${type}` });
   }
 
   const interval = TF_INTERVAL[timeframe];
@@ -140,7 +129,7 @@ router.get('/indicators', async (req, res) => {
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data
+      FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time ASC
@@ -188,8 +177,8 @@ router.get('/indicators', async (req, res) => {
 
     return res.json({ symbol: symbol.toUpperCase(), timeframe, ...result });
   } catch (err) {
-    console.error('❌ Indicators error:', err);
-    return res.status(500).json({ error: 'İndikatör hesaplanamadı.' });
+    logger.error({ err }, 'Indicators error');
+    return res.status(500).json({ error: 'Failed to calculate indicator.' });
   }
 });
 
@@ -198,33 +187,102 @@ router.get('/drawings', async (req, res) => {
   const { symbol, timeframe } = req.query;
   const userId = getOptionalUserId(req);
 
+  // Guests have no saved drawings — return early to avoid leaking other users' data
+  if (!userId) {
+    return res.json({ drawings: [] });
+  }
+
   try {
-    const params = {
-      sym: String(symbol || '').toUpperCase(),
-      tf: timeframe || '',
-      userId: userId || '',
-    };
-    const filters = [
-      'symbol = {sym:String}',
-      'timeframe = {tf:String}',
-    ];
-
-    if (userId) filters.push('userId = {userId:String}');
-
     const { rows } = await query(
       `
       SELECT *
-      FROM drawings
-      WHERE ${filters.join(' AND ')}
+      FROM drawings FINAL
+      WHERE symbol = {sym:String}
+        AND timeframe = {tf:String}
+        AND userId = {userId:String}
       ORDER BY createdAt ASC
       `,
-      params
+      {
+        sym: String(symbol || '').toUpperCase(),
+        tf: timeframe || '',
+        userId,
+      }
     );
     return res.json({ drawings: rows });
   } catch (err) {
-    console.error('❌ Drawings fetch error:', err);
+    logger.error({ err }, 'Drawings fetch error');
     // Return 500 with flag so frontend can distinguish from "no drawings"
-    return res.status(500).json({ drawings: [], error: 'Çizimler yüklenemedi.' });
+    return res.status(500).json({ drawings: [], error: 'Failed to load drawings.' });
+  }
+});
+
+// ── POST /api/chart/drawings ──
+router.post('/drawings', authMiddleware, async (req, res) => {
+  const { symbol, timeframe, type, coordinates } = req.body;
+  const userId = req.userId;
+
+  if (!symbol || !timeframe || !type || !coordinates) {
+    return res.status(400).json({ error: 'symbol, timeframe, type, and coordinates are required.' });
+  }
+  if (!validateParams(symbol, timeframe, res)) return;
+  if (!['hline', 'trendline'].includes(type)) {
+    return res.status(400).json({ error: "Invalid type. Must be 'hline' or 'trendline'." });
+  }
+
+  let coordsStr;
+  try {
+    coordsStr = typeof coordinates === 'string' ? coordinates : JSON.stringify(coordinates);
+    JSON.parse(coordsStr);
+  } catch {
+    return res.status(400).json({ error: 'coordinates must be valid JSON.' });
+  }
+
+  const id = randomUUID();
+  const createdAt = new Date().toISOString().replace('T', ' ').replace('Z', '');
+
+  try {
+    await insert('drawings', [{
+      id,
+      userId: userId || '',
+      symbol: symbol.toUpperCase(),
+      timeframe,
+      type,
+      coordinates: coordsStr,
+      createdAt,
+    }]);
+    return res.status(201).json({ id, message: 'Drawing saved.' });
+  } catch (err) {
+    logger.error({ err }, 'Drawing save error');
+    return res.status(500).json({ error: 'Failed to save drawing.' });
+  }
+});
+
+// ── DELETE /api/chart/drawings/:id ──
+router.delete('/drawings/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+
+  if (!id) return res.status(400).json({ error: 'id zorunludur.' });
+
+  try {
+    const { rows } = await query(
+      `SELECT id FROM drawings FINAL WHERE id = {id:String} AND userId = {userId:String} LIMIT 1`,
+      { id, userId: userId || '' }
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Drawing not found or you do not have permission to delete it.' });
+    }
+
+    await execute(
+      `ALTER TABLE drawings DELETE WHERE id = {id:String} AND userId = {userId:String}`,
+      { id, userId: userId || '' }
+    );
+
+    return res.json({ message: 'Drawing deleted.' });
+  } catch (err) {
+    logger.error({ err }, 'Drawing delete error');
+    return res.status(500).json({ error: 'Failed to delete drawing.' });
   }
 });
 
@@ -248,7 +306,7 @@ router.post('/predict', authMiddleware, async (req, res) => {
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data
+      FROM market_data_daily
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
@@ -271,7 +329,7 @@ router.post('/predict', authMiddleware, async (req, res) => {
 
     if (candles.length < 30) {
       return res.status(422).json({
-        error: `AI tahmini için en az 30 günlük veri gerekiyor (mevcut: ${candles.length}).`
+        error: `AI prediction requires at least 30 days of data (available: ${candles.length}).`
       });
     }
 
@@ -287,7 +345,7 @@ router.post('/predict', authMiddleware, async (req, res) => {
     if (!aiRes.ok) {
       const errBody = await aiRes.json().catch(() => ({}));
       return res.status(aiRes.status).json({
-        error: errBody?.error || 'AI servisi hata döndürdü.',
+        error: errBody?.detail || errBody?.error || 'AI service returned an error.',
       });
     }
 
@@ -298,10 +356,10 @@ router.post('/predict', authMiddleware, async (req, res) => {
 
   } catch (err) {
     if (err.name === 'TimeoutError') {
-      return res.status(503).json({ error: 'AI servisi zaman aşımına uğradı.' });
+      return res.status(503).json({ error: 'AI service timed out.' });
     }
-    console.error('❌ AI predict error:', err);
-    return res.status(503).json({ error: 'AI servisi bağlantısı kurulamadı.' });
+    logger.error({ err }, 'AI predict error');
+    return res.status(503).json({ error: 'Could not connect to AI service.' });
   }
 });
 
@@ -328,7 +386,7 @@ router.post('/anomalies', authMiddleware, async (req, res) => {
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data
+      FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
@@ -362,7 +420,7 @@ router.post('/anomalies', authMiddleware, async (req, res) => {
     if (!aiRes.ok) {
       const errBody = await aiRes.json().catch(() => ({}));
       return res.status(aiRes.status).json({
-        error: errBody?.error || 'Anomali servisi hata döndürdü.',
+        error: errBody?.detail || errBody?.error || 'Anomaly service returned an error.',
       });
     }
 
@@ -373,10 +431,10 @@ router.post('/anomalies', authMiddleware, async (req, res) => {
 
   } catch (err) {
     if (err.name === 'TimeoutError') {
-      return res.status(503).json({ error: 'Anomali servisi zaman aşımına uğradı.' });
+      return res.status(503).json({ error: 'Anomaly service timed out.' });
     }
-    console.error('❌ Anomaly detection error:', err);
-    return res.status(503).json({ error: 'Anomali servisi bağlantısı kurulamadı.' });
+    logger.error({ err }, 'Anomaly detection error');
+    return res.status(503).json({ error: 'Could not connect to anomaly service.' });
   }
 });
 

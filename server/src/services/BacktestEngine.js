@@ -163,15 +163,24 @@ export function runBacktest(candles, conditions, actions) {
   // Calculate metrics
   const totalReturn = ((finalValue - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
 
-  const sellTrades = trades.filter(t => t.type === 'sell');
+  // Replay position to compute accurate win rate using weighted avg cost
+  let replayQty = 0;
+  let replayEntry = 0;
   let wins = 0;
-  let buyIdx = 0;
-  const buyTrades = trades.filter(t => t.type === 'buy');
-  for (const sell of sellTrades) {
-    if (buyIdx < buyTrades.length && sell.price > buyTrades[buyIdx].price) wins++;
-    buyIdx++;
+  let sellCount = 0;
+  for (const t of trades) {
+    if (t.type === 'buy') {
+      const newQty = replayQty + t.quantity;
+      replayEntry = newQty > 0 ? ((replayQty * replayEntry) + t.total) / newQty : t.price;
+      replayQty = newQty;
+    } else if (t.type === 'sell') {
+      sellCount++;
+      if (replayEntry > 0 && t.price > replayEntry) wins++;
+      replayQty = Math.max(replayQty - t.quantity, 0);
+      if (replayQty === 0) replayEntry = 0;
+    }
   }
-  const winRate = sellTrades.length > 0 ? (wins / sellTrades.length) * 100 : 0;
+  const winRate = sellCount > 0 ? (wins / sellCount) * 100 : 0;
 
   // Max drawdown from equity curve
   let peak = equityCurve[0];

@@ -1,7 +1,7 @@
 import axios from "axios";
 import TokenManager from "./TokenManager";
 
-const API_BASE_URL = "http://localhost:4000/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
 const APIClient = axios.create({
   baseURL: API_BASE_URL,
@@ -42,7 +42,9 @@ APIClient.interceptors.response.use(
         TokenManager.clear();
         window.dispatchEvent(new Event('auth:expired'));
       }
-    } else if (status === 401) {
+    } else if (status === 401 && TokenManager.getAccessToken()) {
+      // Only fire auth:expired when the user actually had a token (session truly expired).
+      // Unauthenticated requests to protected endpoints should just reject, not redirect.
       TokenManager.clear();
       window.dispatchEvent(new Event('auth:expired'));
     }
