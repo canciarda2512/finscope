@@ -6,7 +6,7 @@ import APIClient from '../services/APIClient';
 import WebSocketClient from '../services/WebSocketClient';
 import {
   MousePointer2, Minus, PencilLine, Brain, AlertTriangle, TrendingUp,
-  ChevronDown, Lock, ArrowUpRight, ArrowDownRight,
+  ChevronDown, Lock, ArrowUpRight, ArrowDownRight, GitFork, Square, Trash2,
 } from 'lucide-react';
 import ChartView from '../components/ChartView';
 import AlertPanel from '../components/AlertPanel';
@@ -17,12 +17,20 @@ import {
 } from '../constants';
 
 function AiBanner({ result, onClose }) {
-  const linR2  = result.models?.linear_r2 ?? null;
-  const polyR2 = result.models?.poly_r2   ?? null;
+  const models = result.models || {};
+  const linR2  = models.linear_r2 ?? null;
+  const polyR2 = models.poly_r2   ?? null;
+  const rfR2   = models.rf_r2     ?? null;
   const hasModels = linR2 !== null && polyR2 !== null;
-  const linWins   = hasModels && linR2 >= polyR2;
-  const bestR2    = hasModels ? Math.max(linR2, polyR2) : null;
-  const bestLabel = linWins ? 'Linear' : 'Polynomial';
+
+  const scores = [
+    { label: 'Linear', r2: linR2 },
+    { label: 'Polynomial', r2: polyR2 },
+    { label: 'Random Forest', r2: rfR2 },
+  ].filter(s => s.r2 !== null);
+
+  const best = scores.length > 0 ? scores.reduce((a, b) => a.r2 >= b.r2 ? a : b) : null;
+  const dirColor = result.direction === 'UP' ? 'var(--green)' : 'var(--red)';
 
   return (
     <div style={{ backgroundColor: 'var(--accent-muted)', borderBottom: '1px solid var(--accent-ring)' }}
@@ -30,31 +38,21 @@ function AiBanner({ result, onClose }) {
       <div className="flex items-center gap-2">
         <Brain size={12} style={{ color: 'var(--accent-text)' }} />
         <span style={{ color: 'var(--accent-text)' }}>
-          AI projection · next 7 candles ·{' '}
-          <strong style={{ color: result.direction === 'UP' ? 'var(--green)' : 'var(--red)' }}>
-            {result.direction}
-          </strong>
-          {hasModels
-            ? <> trend · Best fit: <strong>{bestLabel} R²: {(bestR2 * 100).toFixed(1)}%</strong></>
-            : <> trend · Model fit: <strong>{result.confidence}%</strong></>
-          }
+          AI Prediction · next 7 candles ·{' '}
+          <strong style={{ color: dirColor }}>{result.direction}</strong>
+          {best && <> · Best: <strong>{best.label} R²: {(best.r2 * 100).toFixed(1)}%</strong></>}
+          {' '}· Confidence: <strong>{result.confidence}%</strong>
         </span>
         <button onClick={onClose} className="ml-auto opacity-60 hover:opacity-100 text-[10px]"
           style={{ color: 'var(--text-muted)' }}>dismiss</button>
       </div>
-      {hasModels && (
-        <div className="flex items-center gap-2 mt-1 pl-5" style={{ color: 'var(--text-muted)' }}>
-          <span style={ linWins ? { color: 'var(--accent-text)', fontWeight: 600 } : {}}>
-            Linear: {(linR2 * 100).toFixed(1)}%{linWins ? ' ✓' : ''}
-          </span>
-          <span>·</span>
-          <span style={!linWins ? { color: 'var(--accent-text)', fontWeight: 600 } : {}}>
-            Polynomial: {(polyR2 * 100).toFixed(1)}%{!linWins ? ' ✓' : ''}
-          </span>
-          <span>·</span>
-          <span style={{ fontStyle: 'italic', opacity: 0.7 }}>
-            {linWins ? 'linear-dominant' : 'poly-dominant'} blend → {result.confidence}%
-          </span>
+      {scores.length > 0 && (
+        <div className="flex items-center gap-3 mt-1 pl-5" style={{ color: 'var(--text-muted)' }}>
+          {scores.map(s => (
+            <span key={s.label} style={s === best ? { color: 'var(--accent-text)', fontWeight: 600 } : {}}>
+              {s.label}: {(s.r2 * 100).toFixed(1)}%{s === best ? ' \u2713' : ''}
+            </span>
+          ))}
         </div>
       )}
     </div>
@@ -309,6 +307,8 @@ export default function ChartPage() {
             { id: 'cursor', icon: <MousePointer2 size={15} />, title: 'Cursor' },
             { id: 'tline', icon: <PencilLine size={15} />, title: 'Trendline' },
             { id: 'hline', icon: <Minus size={15} />, title: 'Horizontal Line' },
+            { id: 'fib', icon: <GitFork size={15} />, title: 'Fibonacci Retracement' },
+            { id: 'rect', icon: <Square size={15} />, title: 'Rectangle Zone' },
           ].map(({ id, icon, title }) => (
             <button key={id} onClick={() => setActiveTool(id)} title={title} className="p-2 rounded-md transition"
               style={{
@@ -349,6 +349,16 @@ export default function ChartPage() {
               Click the first point on the chart, then click the second point to draw a trendline.
             </div>
           )}
+          {activeTool === 'fib' && (
+            <div className="px-3 py-1.5 text-[10px]" style={{ color: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.2)' }}>
+              Click the high point, then the low point to draw Fibonacci retracement levels.
+            </div>
+          )}
+          {activeTool === 'rect' && (
+            <div className="px-3 py-1.5 text-[10px]" style={{ color: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.08)', borderBottom: '1px solid rgba(167,139,250,0.2)' }}>
+              Click the first corner, then the opposite corner to draw a rectangle zone.
+            </div>
+          )}
           {aiResult && <AiBanner result={aiResult} onClose={() => setAiResult(null)} />}
           {aiError && (
             <div className="px-3 py-1.5 text-[10px] flex items-center gap-2" style={{ color: 'var(--red)', backgroundColor: 'var(--red-muted)', borderBottom: '1px solid rgba(239,68,68,0.2)' }}>
@@ -357,17 +367,39 @@ export default function ChartPage() {
             </div>
           )}
           {anomalyActive && anomalies.length > 0 && (
-            <div className="px-3 py-1.5 flex flex-wrap gap-1.5" style={{ backgroundColor: 'rgba(249,115,22,0.06)', borderBottom: '1px solid rgba(249,115,22,0.2)' }}>
-              {anomalies.map((a, i) => (
-                <span key={i} className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{
-                  backgroundColor: a.severity === 'HIGH' ? 'var(--red-muted)' : 'rgba(249,115,22,0.1)',
-                  border: `1px solid ${a.severity === 'HIGH' ? 'rgba(239,68,68,0.3)' : 'rgba(249,115,22,0.3)'}`,
-                  color: a.severity === 'HIGH' ? 'var(--red)' : '#f97316',
-                }}>
-                  <AlertTriangle size={8} className="inline mr-0.5" />
-                  {a.type} - {new Date(a.time * 1000).toLocaleTimeString()} - {a.severity}
+            <div className="px-3 py-2 overflow-x-auto" style={{ backgroundColor: 'rgba(249,115,22,0.06)', borderBottom: '1px solid rgba(249,115,22,0.2)' }}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <AlertTriangle size={11} style={{ color: '#f97316' }} />
+                <span className="text-[10px] font-semibold" style={{ color: '#f97316' }}>
+                  {anomalies.length} anomal{anomalies.length === 1 ? 'y' : 'ies'} detected
                 </span>
-              ))}
+                <span className="text-[9px]" style={{ color: 'var(--text-dim)' }}>
+                  ({anomalies.filter(a => a.severity === 'HIGH').length} high, {anomalies.filter(a => a.severity !== 'HIGH').length} medium)
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {anomalies.map((a, i) => {
+                  const labels = {
+                    volume_spike: 'Vol Spike', price_gap: 'Price Gap',
+                    bb_breakout_upper: 'BB Upper', bb_breakout_lower: 'BB Lower',
+                    rsi_overbought: 'RSI High', rsi_oversold: 'RSI Low',
+                    divergence_bearish: 'Bear Div', divergence_bullish: 'Bull Div',
+                    streak_bullish: 'Bull Streak', streak_bearish: 'Bear Streak',
+                  };
+                  const isHigh = a.severity === 'HIGH';
+                  return (
+                    <span key={i} className="text-[9px] px-1.5 py-0.5 rounded cursor-default" title={a.details} style={{
+                      backgroundColor: isHigh ? 'var(--red-muted)' : 'rgba(249,115,22,0.1)',
+                      border: `1px solid ${isHigh ? 'rgba(239,68,68,0.3)' : 'rgba(249,115,22,0.3)'}`,
+                      color: isHigh ? 'var(--red)' : '#f97316',
+                    }}>
+                      <AlertTriangle size={8} className="inline mr-0.5" />
+                      <span className="font-semibold">{labels[a.type] || a.type}</span>
+                      {' '}{new Date(a.time * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           )}
           {anomalyError && (
@@ -393,6 +425,16 @@ export default function ChartPage() {
               indicatorData={indicatorData}
               onPriceSelect={price => setSelectedOrderPrice(price?.toFixed(2) || '')}
               onSetAlert={isAuthenticated ? (price) => setPendingAlertPrice(price) : undefined}
+              onToolReset={() => setActiveTool('cursor')}
+              onDrawingSave={async ({ type, coordinates }) => {
+                try {
+                  const res = await APIClient.post('/chart/drawings', { symbol, timeframe, type, coordinates });
+                  return res.data;
+                } catch { return null; }
+              }}
+              onDrawingDelete={async (id) => {
+                try { await APIClient.delete(`/chart/drawings/${id}`); } catch {}
+              }}
               height="100%" theme={theme}
             />
           </div>

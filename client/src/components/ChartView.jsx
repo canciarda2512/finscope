@@ -8,11 +8,14 @@ import { createChart } from 'lightweight-charts';
  *   candles        — full historical array (triggers setData)
  *   liveCandle     — single live tick from WebSocket (triggers update)
  *   timeframe      — string: '1m'|'5m'|'1D'|'1W'|'1M'
- *   activeTool     — 'cursor'|'tline'|'hline'
+ *   activeTool     — 'cursor'|'tline'|'hline'|'fib'|'rect'
  *   aiPrediction   — { direction, confidence, predictedValues } | null
  *   anomalies      — [{ time, type, severity }]
  *   onPriceSelect  — (price: number) => void
  *   onSetAlert     — (price: number) => void  (right-click → set alert)
+ *   onToolReset    — () => void  (reset tool to cursor after drawing)
+ *   onDrawingSave  — ({ type, coordinates }) => Promise<{ id }> (save drawing to backend)
+ *   onDrawingDelete — (id: string) => void (delete drawing from backend)
  */
 export default function ChartView({
   candles,
@@ -27,6 +30,9 @@ export default function ChartView({
   height = '100%',
   onPriceSelect,
   onSetAlert,
+  onToolReset,
+  onDrawingSave,
+  onDrawingDelete,
   theme = 'dark',
 }) {
   const [contextMenu, setContextMenu] = useState(null);
@@ -35,11 +41,16 @@ export default function ChartView({
   const candleSeriesRef = useRef(null);
   const activeToolRef = useRef(activeTool);
   const trendlinePointsRef = useRef([]);
-  const drawingSeriesRef = useRef([]);
-  const savedDrawingSeriesRef = useRef([]);
+  // Each drawing: { id, type, series: [...lineSeries], meta }
+  const drawingsRef = useRef([]);
+  const drawingIdCounter = useRef(0);
+  const selectedDrawingRef = useRef(null);
+  const [selectedDrawingId, setSelectedDrawingId] = useState(null);
+  const onDrawingDeleteRef = useRef(onDrawingDelete);
   const aiSeriesRef = useRef(null);
   const aiLinSeriesRef = useRef(null);
   const aiPolySeriesRef = useRef(null);
+  const aiRfSeriesRef = useRef(null);
   const anomalySeriesRef = useRef(null);
   const indicatorSeriesRef = useRef([]);
 
@@ -49,9 +60,11 @@ export default function ChartView({
   const rsiChartRef = useRef(null);
   const macdChartRef = useRef(null);
 
+  useEffect(() => { onDrawingDeleteRef.current = onDrawingDelete; }, [onDrawingDelete]);
+
   useEffect(() => {
     activeToolRef.current = activeTool;
-    if (activeTool !== 'tline') trendlinePointsRef.current = [];
+    if (!['tline', 'fib', 'rect'].includes(activeTool)) trendlinePointsRef.current = [];
   }, [activeTool]);
 
   // ── Chart init (once per mount) ──
@@ -120,6 +133,22 @@ export default function ChartView({
           trendlinePointsRef.current = [];
         }
       }
+      if (tool === 'fib') {
+        const pts = trendlinePointsRef.current;
+        pts.push({ time, price });
+        if (pts.length === 2) {
+          drawFibonacci(pts[0], pts[1]);
+          trendlinePointsRef.current = [];
+        }
+      }
+      if (tool === 'rect') {
+        const pts = trendlinePointsRef.current;
+        pts.push({ time, price });
+        if (pts.length === 2) {
+          drawRectangle(pts[0], pts[1]);
+          trendlinePointsRef.current = [];
+        }
+      }
     });
 
     // Right-click context menu
@@ -140,6 +169,30 @@ export default function ChartView({
     const closeMenu = () => setContextMenu(null);
     document.addEventListener('click', closeMenu);
 
+    // Delete/Backspace removes last drawing
+    const handleKeyDown = (e) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+        const drawings = drawingsRef.current;
+        if (drawings.length === 0) return;
+        // Remove selected or last drawing
+        const targetId = selectedDrawingRef.current ?? drawings[drawings.length - 1].id;
+        const idx = drawings.findIndex(d => d.id === targetId);
+        if (idx === -1) return;
+        const drawing = drawings[idx];
+        drawing.series.forEach(s => {
+          try { chart.removeSeries(s); } catch (_) {}
+        });
+        if (drawing.backendId && onDrawingDeleteRef.current) {
+          onDrawingDeleteRef.current(drawing.backendId);
+        }
+        drawings.splice(idx, 1);
+        selectedDrawingRef.current = null;
+        setSelectedDrawingId(null);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+
     const resize = () => {
       const newHeight = height === '100%' ? container.clientHeight || 500 : height;
       chart.applyOptions({ width: container.clientWidth, height: newHeight });
@@ -149,17 +202,60 @@ export default function ChartView({
     return () => {
       container.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('click', closeMenu);
+      document.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('resize', resize);
       chart.remove();
     };
   }, []);
 
   // ── Drawing helpers ──
+  const addDrawing = useCallback((type, seriesList, meta = {}) => {
+    const localId = ++drawingIdCounter.current;
+    const drawing = { id: localId, backendId: null, type, series: seriesList, meta };
+    drawingsRef.current.push(drawing);
+
+    // Persist to backend
+    if (onDrawingSave) {
+      onDrawingSave({ type, coordinates: meta }).then(res => {
+        if (res?.id) drawing.backendId = res.id;
+      }).catch(() => {});
+    }
+
+    return localId;
+  }, [onDrawingSave]);
+
+  const removeDrawing = useCallback((id) => {
+    const idx = drawingsRef.current.findIndex(d => d.id === id);
+    if (idx === -1) return;
+    const drawing = drawingsRef.current[idx];
+    drawing.series.forEach(s => {
+      try { chartRef.current?.removeSeries(s); } catch (_) {}
+    });
+    // Delete from backend if it has a backendId
+    if (drawing.backendId && onDrawingDelete) {
+      onDrawingDelete(drawing.backendId);
+    }
+    drawingsRef.current.splice(idx, 1);
+    if (selectedDrawingId === id) setSelectedDrawingId(null);
+  }, [selectedDrawingId, onDrawingDelete]);
+
+  const clearAllDrawings = useCallback(() => {
+    drawingsRef.current.forEach(d => {
+      d.series.forEach(s => {
+        try { chartRef.current?.removeSeries(s); } catch (_) {}
+      });
+      if (d.backendId && onDrawingDelete) onDrawingDelete(d.backendId);
+    });
+    drawingsRef.current = [];
+    setSelectedDrawingId(null);
+  }, [onDrawingDelete]);
+
   const drawHorizontalLine = useCallback((price) => {
-    if (!chartRef.current) return;
-    const ts = chartRef.current.timeScale();
-    const range = ts.getVisibleRange();
-    if (!range) return;
+    if (!chartRef.current || !candles?.length) return;
+    const firstTime = candles[0].time;
+    const lastTime = candles[candles.length - 1].time;
+    // Extend 20% beyond data range
+    const extend = Math.max(Math.floor((lastTime - firstTime) * 0.2), 86400);
     const s = chartRef.current.addLineSeries({
       color: '#facc15',
       lineWidth: 1,
@@ -169,11 +265,11 @@ export default function ChartView({
       crosshairMarkerVisible: false,
     });
     s.setData([
-      { time: range.from, value: price },
-      { time: range.to, value: price },
+      { time: Math.floor(firstTime), value: price },
+      { time: Math.floor(lastTime + extend), value: price },
     ]);
-    drawingSeriesRef.current.push(s);
-  }, []);
+    addDrawing('hline', [s], { price });
+  }, [candles, addDrawing]);
 
   const drawTrendline = useCallback((p1, p2) => {
     if (!chartRef.current) return;
@@ -190,16 +286,121 @@ export default function ChartView({
       { time: from.time, value: from.price },
       { time: to.time, value: to.price },
     ]);
-    drawingSeriesRef.current.push(s);
-  }, []);
+    addDrawing('tline', [s], { from, to });
+  }, [addDrawing]);
 
-  useEffect(() => {
-    if (!chartRef.current) return;
+  const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  const FIB_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#06b6d4'];
 
-    savedDrawingSeriesRef.current.forEach(series => {
-      try { chartRef.current.removeSeries(series); } catch (_) {}
+  const drawFibonacci = useCallback((p1, p2) => {
+    if (!chartRef.current || !candles?.length) return;
+    const high = Math.max(p1.price, p2.price);
+    const low = Math.min(p1.price, p2.price);
+    if (high === low) return;
+
+    const firstTime = candles[0].time;
+    const lastTime = candles[candles.length - 1].time;
+    const extend = Math.max(Math.floor((lastTime - firstTime) * 0.2), 86400);
+    const seriesList = [];
+
+    FIB_LEVELS.forEach((level, i) => {
+      const price = high - (high - low) * level;
+      const s = chartRef.current.addLineSeries({
+        color: FIB_COLORS[i],
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+        title: `${(level * 100).toFixed(1)}%`,
+      });
+      s.setData([
+        { time: Math.floor(firstTime), value: price },
+        { time: Math.floor(lastTime + extend), value: price },
+      ]);
+      seriesList.push(s);
     });
-    savedDrawingSeriesRef.current = [];
+
+    addDrawing('fib', seriesList, { high, low });
+    onToolReset?.();
+  }, [candles, addDrawing, onToolReset]);
+
+  const drawRectangle = useCallback((p1, p2) => {
+    if (!chartRef.current) return;
+    const [from, to] = p1.time <= p2.time ? [p1, p2] : [p2, p1];
+    if (from.time === to.time) return;
+    const top = Math.max(p1.price, p2.price);
+    const bottom = Math.min(p1.price, p2.price);
+    const seriesList = [];
+
+    // Top edge
+    const sTop = chartRef.current.addLineSeries({
+      color: '#a78bfa',
+      lineWidth: 1,
+      lineStyle: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+      title: 'Zone',
+    });
+    sTop.setData([
+      { time: from.time, value: top },
+      { time: to.time, value: top },
+    ]);
+    seriesList.push(sTop);
+
+    // Bottom edge
+    const sBot = chartRef.current.addLineSeries({
+      color: '#a78bfa',
+      lineWidth: 1,
+      lineStyle: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    sBot.setData([
+      { time: from.time, value: bottom },
+      { time: to.time, value: bottom },
+    ]);
+    seriesList.push(sBot);
+
+    // Mid-line to visually fill the zone
+    const sMid = chartRef.current.addLineSeries({
+      color: 'rgba(167,139,250,0.15)',
+      lineWidth: 1,
+      lineStyle: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    sMid.setData([
+      { time: from.time, value: (top + bottom) / 2 },
+      { time: to.time, value: (top + bottom) / 2 },
+    ]);
+    seriesList.push(sMid);
+
+    addDrawing('rect', seriesList, { from, to, top, bottom });
+    onToolReset?.();
+  }, [addDrawing, onToolReset]);
+
+  // ── Load saved drawings from backend into drawingsRef ──
+  useEffect(() => {
+    if (!chartRef.current || !candles?.length) return;
+
+    // Remove previously loaded saved drawings (those with backendId)
+    const toKeep = [];
+    drawingsRef.current.forEach(d => {
+      if (d.backendId && d._fromSaved) {
+        d.series.forEach(s => { try { chartRef.current.removeSeries(s); } catch (_) {} });
+      } else {
+        toKeep.push(d);
+      }
+    });
+    drawingsRef.current = toKeep;
+
+    const firstTime = Math.floor(candles[0].time);
+    const lastTime = Math.floor(candles[candles.length - 1].time);
+    const extend = Math.max(Math.floor((lastTime - firstTime) * 0.2), 86400);
 
     savedDrawings.forEach(drawing => {
       try {
@@ -211,24 +412,16 @@ export default function ChartView({
           const price = Number(coordinates?.price ?? coordinates?.value ?? coordinates?.[0]?.price);
           if (!Number.isFinite(price)) return;
 
-          const range = chartRef.current.timeScale().getVisibleRange();
-          const from = range?.from ?? candles?.[0]?.time;
-          const to = range?.to ?? candles?.[candles.length - 1]?.time;
-          if (!from || !to) return;
-
-          const series = chartRef.current.addLineSeries({
-            color: '#facc15',
-            lineWidth: 1,
-            lineStyle: 1,
-            priceLineVisible: false,
-            lastValueVisible: true,
-            crosshairMarkerVisible: false,
+          const s = chartRef.current.addLineSeries({
+            color: '#facc15', lineWidth: 1, lineStyle: 1,
+            priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
           });
-          series.setData([
-            { time: from, value: price },
-            { time: to, value: price },
+          s.setData([
+            { time: firstTime, value: price },
+            { time: lastTime + extend, value: price },
           ]);
-          savedDrawingSeriesRef.current.push(series);
+          const localId = ++drawingIdCounter.current;
+          drawingsRef.current.push({ id: localId, backendId: drawing.id, type: 'hline', series: [s], meta: { price }, _fromSaved: true });
         }
 
         if (drawing.type === 'trendline') {
@@ -240,23 +433,76 @@ export default function ChartView({
           const fromPrice = Number(p1?.price ?? p1?.value);
           const toTime = Number(p2?.time);
           const toPrice = Number(p2?.price ?? p2?.value);
-
           if (![fromTime, fromPrice, toTime, toPrice].every(Number.isFinite)) return;
-
           if (fromTime === toTime) return;
-          
-          const series = chartRef.current.addLineSeries({
-            color: '#38bdf8',
-            lineWidth: 2,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
+
+          const s = chartRef.current.addLineSeries({
+            color: '#38bdf8', lineWidth: 2,
+            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
           });
-          series.setData([
+          s.setData([
             { time: fromTime, value: fromPrice },
             { time: toTime, value: toPrice },
           ]);
-          savedDrawingSeriesRef.current.push(series);
+          const localId = ++drawingIdCounter.current;
+          drawingsRef.current.push({ id: localId, backendId: drawing.id, type: 'trendline', series: [s], meta: { from: p1, to: p2 }, _fromSaved: true });
+        }
+
+        if (drawing.type === 'fib') {
+          const high = Number(coordinates?.high);
+          const low = Number(coordinates?.low);
+          if (!Number.isFinite(high) || !Number.isFinite(low) || high === low) return;
+
+          const seriesList = [];
+          FIB_LEVELS.forEach((level, i) => {
+            const price = high - (high - low) * level;
+            const s = chartRef.current.addLineSeries({
+              color: FIB_COLORS[i], lineWidth: 1, lineStyle: 2,
+              priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
+              title: `${(level * 100).toFixed(1)}%`,
+            });
+            s.setData([
+              { time: firstTime, value: price },
+              { time: lastTime + extend, value: price },
+            ]);
+            seriesList.push(s);
+          });
+          const localId = ++drawingIdCounter.current;
+          drawingsRef.current.push({ id: localId, backendId: drawing.id, type: 'fib', series: seriesList, meta: { high, low }, _fromSaved: true });
+        }
+
+        if (drawing.type === 'rect') {
+          const top = Number(coordinates?.top);
+          const bottom = Number(coordinates?.bottom);
+          const fromTime = Number(coordinates?.from?.time);
+          const toTime = Number(coordinates?.to?.time);
+          if (![top, bottom, fromTime, toTime].every(Number.isFinite)) return;
+          if (fromTime === toTime) return;
+
+          const seriesList = [];
+          const sTop = chartRef.current.addLineSeries({
+            color: '#a78bfa', lineWidth: 1, lineStyle: 2,
+            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, title: 'Zone',
+          });
+          sTop.setData([{ time: fromTime, value: top }, { time: toTime, value: top }]);
+          seriesList.push(sTop);
+
+          const sBot = chartRef.current.addLineSeries({
+            color: '#a78bfa', lineWidth: 1, lineStyle: 2,
+            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+          });
+          sBot.setData([{ time: fromTime, value: bottom }, { time: toTime, value: bottom }]);
+          seriesList.push(sBot);
+
+          const sMid = chartRef.current.addLineSeries({
+            color: 'rgba(167,139,250,0.15)', lineWidth: 1, lineStyle: 2,
+            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+          });
+          sMid.setData([{ time: fromTime, value: (top + bottom) / 2 }, { time: toTime, value: (top + bottom) / 2 }]);
+          seriesList.push(sMid);
+
+          const localId = ++drawingIdCounter.current;
+          drawingsRef.current.push({ id: localId, backendId: drawing.id, type: 'rect', series: seriesList, meta: coordinates, _fromSaved: true });
         }
       } catch (err) {
         console.warn('Saved drawing render error:', err.message);
@@ -507,7 +753,7 @@ export default function ChartView({
     if (!chartRef.current) return;
 
     // Remove all existing AI series
-    for (const ref of [aiLinSeriesRef, aiPolySeriesRef, aiSeriesRef]) {
+    for (const ref of [aiLinSeriesRef, aiPolySeriesRef, aiRfSeriesRef, aiSeriesRef]) {
       if (ref.current) {
         try { chartRef.current.removeSeries(ref.current); } catch (_) {}
         ref.current = null;
@@ -564,6 +810,21 @@ export default function ChartView({
       aiPolySeriesRef.current = s;
     }
 
+    // Random Forest — thin green dotted
+    if (models.rf_values?.length) {
+      const s = chartRef.current.addLineSeries({
+        color: '#34d399',
+        lineWidth: 1,
+        lineStyle: 3,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+        title: `RF R²:${(models.rf_r2 * 100).toFixed(1)}%`,
+      });
+      s.setData(anchorShift(models.rf_values));
+      aiRfSeriesRef.current = s;
+    }
+
     // Ensemble — purple dashed (main result)
     const s = chartRef.current.addLineSeries({
       color: '#a855f7',
@@ -609,11 +870,10 @@ export default function ChartView({
       drawHorizontalLine(contextMenu.price);
     } else if (action === 'select') {
       onPriceSelect?.(contextMenu.price);
+    } else if (action === 'delete-selected') {
+      if (selectedDrawingId != null) removeDrawing(selectedDrawingId);
     } else if (action === 'clear-drawings') {
-      drawingSeriesRef.current.forEach(s => {
-        try { chartRef.current.removeSeries(s); } catch (_) {}
-      });
-      drawingSeriesRef.current = [];
+      clearAllDrawings();
     }
     setContextMenu(null);
   };
@@ -650,10 +910,16 @@ export default function ChartView({
             className="w-full text-left px-3 py-1.5 transition" style={{ color: 'var(--text-secondary)' }}>
             Use as Order Price
           </button>
-          {drawingSeriesRef.current.length > 0 && (
+          {selectedDrawingId != null && (
+            <button onClick={() => handleContextAction('delete-selected')}
+              className="w-full text-left px-3 py-1.5 transition" style={{ color: '#f97316', borderTop: '1px solid var(--border-primary)' }}>
+              Delete Selected Drawing
+            </button>
+          )}
+          {drawingsRef.current.length > 0 && (
             <button onClick={() => handleContextAction('clear-drawings')}
               className="w-full text-left px-3 py-1.5 transition" style={{ color: 'var(--red)', borderTop: '1px solid var(--border-primary)' }}>
-              Clear All Drawings
+              Clear All Drawings ({drawingsRef.current.length})
             </button>
           )}
         </div>
