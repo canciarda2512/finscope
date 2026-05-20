@@ -4,19 +4,19 @@ from sklearn.preprocessing import PolynomialFeatures
 from app.config import PREDICTION_HORIZON
 
 
-def _linear_predict(X: np.ndarray, closes: np.ndarray, vol_norm: np.ndarray, last_idx: int):
+def _linear_predict(X: np.ndarray, closes: np.ndarray, vol_norm: np.ndarray, last_idx: int, future_vol: float = 0.0):
     features = np.column_stack([X.flatten(), vol_norm])
     model = LinearRegression()
     model.fit(features, closes)
     r2 = max(0.0, float(model.score(features, closes)))
 
     future_indices = np.arange(last_idx + 1, last_idx + 1 + PREDICTION_HORIZON)
-    future_features = np.column_stack([future_indices, np.zeros(PREDICTION_HORIZON)])
+    future_features = np.column_stack([future_indices, np.full(PREDICTION_HORIZON, future_vol)])
     preds = model.predict(future_features)
     return preds, r2
 
 
-def _poly_predict(X: np.ndarray, closes: np.ndarray, vol_norm: np.ndarray, last_idx: int, degree: int = 2):
+def _poly_predict(X: np.ndarray, closes: np.ndarray, vol_norm: np.ndarray, last_idx: int, future_vol: float = 0.0, degree: int = 2):
     poly = PolynomialFeatures(degree=degree, include_bias=False)
     raw_features = np.column_stack([X.flatten(), vol_norm])
     features = poly.fit_transform(raw_features)
@@ -26,7 +26,7 @@ def _poly_predict(X: np.ndarray, closes: np.ndarray, vol_norm: np.ndarray, last_
     r2 = max(0.0, float(model.score(features, closes)))
 
     future_indices = np.arange(last_idx + 1, last_idx + 1 + PREDICTION_HORIZON)
-    future_raw = np.column_stack([future_indices, np.zeros(PREDICTION_HORIZON)])
+    future_raw = np.column_stack([future_indices, np.full(PREDICTION_HORIZON, future_vol)])
     future_features = poly.transform(future_raw)
     preds = model.predict(future_features)
     return preds, r2
@@ -35,9 +35,11 @@ def _poly_predict(X: np.ndarray, closes: np.ndarray, vol_norm: np.ndarray, last_
 def predict_trend(X: np.ndarray, closes: np.ndarray, volumes: np.ndarray) -> dict:
     vol_norm = (volumes - volumes.mean()) / (volumes.std() + 1e-9)
     last_idx = int(X[-1][0])
+    # Use recent average normalized volume for future predictions
+    recent_vol = float(vol_norm[-min(7, len(vol_norm)):].mean())
 
-    lin_preds, lin_r2 = _linear_predict(X, closes, vol_norm, last_idx)
-    poly_preds, poly_r2 = _poly_predict(X, closes, vol_norm, last_idx, degree=2)
+    lin_preds, lin_r2 = _linear_predict(X, closes, vol_norm, last_idx, recent_vol)
+    poly_preds, poly_r2 = _poly_predict(X, closes, vol_norm, last_idx, recent_vol, degree=2)
 
     # Weighted ensemble — each model's contribution is proportional to its R²
     total_w = lin_r2 + poly_r2 + 1e-9

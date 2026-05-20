@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import APIClient from '../services/APIClient';
+import { usePortfolio } from '../context/PortfolioContext';
 
 const DEMO_START_BALANCE = 100000;
 
@@ -14,6 +15,7 @@ function formatCrypto(value) {
 }
 
 export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
+  const { portfolio, refresh: refreshPortfolio } = usePortfolio();
   const [orderTab, setOrderTab] = useState('BUY');
   const [limitSide, setLimitSide] = useState('buy');
   const [inputMode, setInputMode] = useState('usdt'); // 'usdt' | 'crypto'
@@ -21,11 +23,13 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
   const [sellAllMode, setSellAllMode] = useState(false);
   const [orderPrice, setOrderPrice] = useState('');
   const [limitOrders, setLimitOrders] = useState([]);
-  const [portfolioCash, setPortfolioCash] = useState(DEMO_START_BALANCE);
-  const [cryptoBalance, setCryptoBalance] = useState(0);
   const [orderLoading, setOrderLoading] = useState(false);
   const [orderMessage, setOrderMessage] = useState('');
 
+  const portfolioCash = Number(portfolio?.cash ?? portfolio?.balance ?? DEMO_START_BALANCE);
+  const positions = portfolio?.positions || [];
+  const pos = positions.find(p => p.symbol === symbol);
+  const cryptoBalance = Number(pos?.quantity ?? 0);
   const ticker = symbol.replace('USDT', '');
 
   useEffect(() => {
@@ -39,40 +43,32 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
   useEffect(() => {
     let cancelled = false;
 
-    const loadTradingState = async () => {
+    const loadOrders = async () => {
       try {
-        const [portfolioRes, ordersRes] = await Promise.all([
-          APIClient.get('/portfolio'),
-          APIClient.get('/trade/limit'),
-        ]);
-
-        if (!cancelled) {
-          setPortfolioCash(Number(portfolioRes.data?.cash ?? portfolioRes.data?.balance ?? DEMO_START_BALANCE));
-          const positions = portfolioRes.data?.positions || [];
-          const pos = positions.find(p => p.symbol === symbol);
-          setCryptoBalance(Number(pos?.quantity ?? 0));
-          setLimitOrders(ordersRes.data?.orders || []);
-        }
+        const res = await APIClient.get('/trade/limit');
+        if (!cancelled) setLimitOrders(res.data?.orders || []);
       } catch (err) {
-        console.error('Trading state load error:', err);
+        console.error('Limit orders load error:', err);
       }
     };
 
-    loadTradingState();
-    const intervalId = window.setInterval(loadTradingState, 30000);
-    return () => { cancelled = true; window.clearInterval(intervalId); };
-  }, [symbol]);
+    loadOrders();
+    const intervalId = window.setInterval(loadOrders, 30000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const refreshTradingState = async () => {
-    const [portfolioRes, ordersRes] = await Promise.all([
-      APIClient.get('/portfolio'),
-      APIClient.get('/trade/limit'),
-    ]);
-    setPortfolioCash(Number(portfolioRes.data?.cash ?? portfolioRes.data?.balance ?? DEMO_START_BALANCE));
-    const positions = portfolioRes.data?.positions || [];
-    const pos = positions.find(p => p.symbol === symbol);
-    setCryptoBalance(Number(pos?.quantity ?? 0));
-    setLimitOrders(ordersRes.data?.orders || []);
+    refreshPortfolio();
+    try {
+      const res = await APIClient.get('/trade/limit');
+      setLimitOrders(res.data?.orders || []);
+    } catch (err) {
+      console.error('Limit orders refresh error:', err);
+    }
   };
 
   const handleOrderSubmit = async () => {
@@ -157,11 +153,12 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
         <div className="flex gap-1 mb-3">
           {['BUY', 'LIMIT', 'SELL'].map(tab => (
             <button key={tab} onClick={() => { setOrderTab(tab); setSellAllMode(false); }}
+              aria-pressed={orderTab === tab}
               className={`flex-1 py-1.5 rounded text-[10px] font-bold transition ${orderTab === tab
                 ? tab === 'BUY' ? 'bg-green-600 text-white'
                   : tab === 'SELL' ? 'bg-red-600 text-white'
                     : 'bg-blue-600 text-white'
-                : 'bg-slate-800 text-slate-500 hover:text-slate-300'}`}>
+                : 'opacity-60'}`}>
               {tab}
             </button>
           ))}
@@ -174,7 +171,7 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
               <button key={opt.value} onClick={() => setLimitSide(opt.value)}
                 className={`flex-1 py-1.5 rounded text-[10px] font-bold transition ${limitSide === opt.value
                   ? opt.value === 'buy' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                  : 'bg-slate-800 text-slate-500 hover:text-slate-300'}`}>
+                  : 'opacity-60'}`}>
                 {opt.label}
               </button>
             ))}
@@ -183,13 +180,14 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
 
         {/* Amount input with inline currency selector */}
         <div className="mb-2">
-          <div className="text-[10px] text-slate-500 mb-1">Amount</div>
+          <div className="text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>Amount</div>
           <div className="flex rounded overflow-hidden" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)' }}>
             <input
               type="text"
               inputMode="decimal"
               value={orderAmount}
               onChange={e => setOrderAmount(e.target.value)}
+              aria-label={`Order amount in ${inputMode === 'usdt' ? 'USDT' : ticker}`}
               className="flex-1 bg-transparent px-2 py-1.5 text-xs outline-none"
               style={{ color: 'var(--text-primary)' }}
             />
@@ -210,11 +208,13 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
         {/* Limit target price */}
         {orderTab === 'LIMIT' && (
           <div className="mb-2">
-            <div className="text-[10px] text-slate-500 mb-1">Target Price</div>
+            <label htmlFor="target-price" className="text-[10px] mb-1 block" style={{ color: 'var(--text-muted)' }}>Target Price</label>
             <input
+              id="target-price"
               type="number"
               value={orderPrice}
               onChange={e => setOrderPrice(e.target.value)}
+              aria-label="Limit order target price"
               className="w-full rounded px-2 py-1.5 text-xs outline-none transition"
               style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
             />
@@ -222,26 +222,26 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
         )}
 
         {/* Balance info */}
-        <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+        <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>
           <span>Balance</span>
-          <span className="text-white font-mono">${formatMoney(portfolioCash)}</span>
+          <span className="font-mono" style={{ color: 'var(--text-primary)' }}>${formatMoney(portfolioCash)}</span>
         </div>
-        <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+        <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--text-muted)' }}>
           <span>{ticker} Balance</span>
-          <span className="text-white font-mono">{formatCrypto(cryptoBalance)}</span>
+          <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{formatCrypto(cryptoBalance)}</span>
         </div>
 
         {/* Estimated conversion */}
-        <div className="flex justify-between text-[10px] text-slate-500 mb-3">
+        <div className="flex justify-between text-[10px] mb-3" style={{ color: 'var(--text-muted)' }}>
           {inputMode === 'usdt' ? (
             <>
               <span>Est. {ticker}</span>
-              <span className="text-white font-mono">{estCrypto > 0 ? estCrypto.toFixed(6) : '-'}</span>
+              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{estCrypto > 0 ? estCrypto.toFixed(6) : '-'}</span>
             </>
           ) : (
             <>
               <span>Est. USDT</span>
-              <span className="text-white font-mono">{estUsdt > 0 ? `$${formatMoney(estUsdt)}` : '-'}</span>
+              <span className="font-mono" style={{ color: 'var(--text-primary)' }}>{estUsdt > 0 ? `$${formatMoney(estUsdt)}` : '-'}</span>
             </>
           )}
         </div>
@@ -252,14 +252,15 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
             className={`w-full py-1 rounded text-[10px] font-semibold mb-2 transition ${
               sellAllMode
                 ? 'bg-red-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-white'
-            }`}>
+                : 'opacity-60 hover:opacity-80'
+            }`}
+            style={{ backgroundColor: sellAllMode ? undefined : 'var(--bg-input)', border: '1px solid var(--border-secondary)' }}>
             {sellAllMode ? `All Balance (${cryptoBalance.toFixed(6)} ${ticker})` : 'All Balance'}
           </button>
         )}
 
         {orderMessage && (
-          <div className="text-[10px] rounded px-2 py-1 mb-2" style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
+          <div role="status" aria-live="polite" className="text-[10px] rounded px-2 py-1 mb-2" style={{ color: 'var(--text-secondary)', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' }}>
             {orderMessage}
           </div>
         )}
@@ -274,16 +275,18 @@ export default function TradingPanel({ symbol, currentPrice, selectedPrice }) {
       <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
         <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Limit Orders</div>
         {limitOrders.length === 0 ? (
-          <div className="text-[10px] text-slate-600">No open orders</div>
+          <div className="text-[10px]" style={{ color: 'var(--text-dim)' }}>No open orders</div>
         ) : limitOrders.map(order => (
           <div key={order.id} className="flex items-center justify-between py-1.5 border-b last:border-0">
             <div>
               <div className={`text-[10px] font-bold ${order.type === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
                 {String(order.type).toUpperCase()} {order.symbol?.replace('USDT', '')} @ ${formatMoney(order.targetPrice)}
               </div>
-              <div className="text-[10px] text-slate-500">{Number(order.quantity).toFixed(6)} units</div>
+              <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{Number(order.quantity).toFixed(6)} units</div>
             </div>
-            <button onClick={() => cancelLimitOrder(order.id)}
+            <button
+              onClick={() => cancelLimitOrder(order.id)}
+              aria-label={`Cancel ${String(order.type).toUpperCase()} order for ${order.symbol}`}
               className="text-[10px] px-2 py-0.5 rounded transition"
               style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-muted)' }}>
               Cancel

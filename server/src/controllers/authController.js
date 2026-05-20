@@ -1,5 +1,6 @@
 import '../config/env.js';
 import { Router } from 'express';
+import logger from '../utils/logger.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
@@ -69,7 +70,7 @@ router.post('/register', async (req, res) => {
 
     return res.status(201).json({ message: 'Account created' });
   } catch (err) {
-    console.error('Register error:', err);
+    logger.error({ err }, 'Register error');
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -94,7 +95,7 @@ router.post('/login', async (req, res) => {
       const code = generateOTP();
       await setOTP(user.id, code);
       await sendOTPEmail(user.email, code).catch(err =>
-        console.error('2FA email error:', err.message)
+        logger.error({ err }, '2FA email error')
       );
 
       const tempToken = jwt.sign(
@@ -110,6 +111,13 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Generate a nonce stored in DB — used to invalidate refresh tokens on password change
+    const tokenNonce = crypto.randomUUID();
+    await execute(
+      `ALTER TABLE users UPDATE refreshToken = {nonce:String} WHERE id = {id:String}`,
+      { nonce: tokenNonce, id: user.id }
+    );
+
     const accessToken = jwt.sign(
       { userId: user.id },
       process.env.JWT_SECRET,
@@ -117,14 +125,24 @@ router.post('/login', async (req, res) => {
     );
 
     const refreshToken = jwt.sign(
-      { userId: user.id },
+      { userId: user.id, nonce: tokenNonce },
       process.env.JWT_REFRESH_SECRET,
       { expiresIn: '14d' }
     );
 
-    return res.json({ accessToken, refreshToken });
+    return res.json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        twoFactorEnabled: Number(user.twoFactorEnabled) === 1,
+        createdAt: user.createdAt,
+      },
+    });
   } catch (err) {
-    console.error('Login error:', err);
+    logger.error({ err }, 'Login error');
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -156,6 +174,14 @@ router.post('/2fa/login-verify', async (req, res) => {
 
     await deleteOTP(payload.userId);
 
+    const user = await ClickHouseClient.getUserById(payload.userId);
+
+    const tokenNonce = crypto.randomUUID();
+    await execute(
+      `ALTER TABLE users UPDATE refreshToken = {nonce:String} WHERE id = {id:String}`,
+      { nonce: tokenNonce, id: payload.userId }
+    );
+
     const accessToken = jwt.sign(
       { userId: payload.userId },
       process.env.JWT_SECRET,
@@ -163,14 +189,24 @@ router.post('/2fa/login-verify', async (req, res) => {
     );
 
     const refreshToken = jwt.sign(
-      { userId: payload.userId },
+      { userId: payload.userId, nonce: tokenNonce },
       process.env.JWT_REFRESH_SECRET,
       { expiresIn: '14d' }
     );
 
-    return res.json({ accessToken, refreshToken });
+    return res.json({
+      accessToken,
+      refreshToken,
+      user: user ? {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        twoFactorEnabled: Number(user.twoFactorEnabled) === 1,
+        createdAt: user.createdAt,
+      } : null,
+    });
   } catch (err) {
-    console.error('2FA login verify error:', err);
+    logger.error({ err }, '2FA login verify error');
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -187,6 +223,7 @@ router.get('/me', async (req, res) => {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.purpose) return res.status(401).json({ message: 'Invalid token type' });
     const user = await ClickHouseClient.getUserById(payload.userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -213,6 +250,16 @@ router.post('/refresh', async (req, res) => {
     if (!refreshToken) return res.status(401).json({ message: 'Refresh token missing' });
 
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+    // Verify user still exists and token nonce is still valid
+    const user = await ClickHouseClient.getUserById(payload.userId);
+    if (!user) return res.status(401).json({ message: 'User no longer exists' });
+
+    // If the stored nonce doesn't match, the token was invalidated (e.g. password change)
+    if (payload.nonce && user.refreshToken && user.refreshToken !== payload.nonce) {
+      return res.status(401).json({ message: 'Session expired — please log in again' });
+    }
+
     const newAccessToken = jwt.sign(
       { userId: payload.userId },
       process.env.JWT_SECRET,
@@ -248,14 +295,15 @@ router.post('/change-password', authMiddleware, async (req, res) => {
 
     const newHash = await bcrypt.hash(newPassword, 12);
 
+    // Update password and invalidate all existing refresh tokens by rotating the nonce
     await execute(
-      `ALTER TABLE users UPDATE passwordHash = {hash:String} WHERE id = {id:String}`,
-      { hash: newHash, id: userId }
+      `ALTER TABLE users UPDATE passwordHash = {hash:String}, refreshToken = {nonce:String} WHERE id = {id:String}`,
+      { hash: newHash, nonce: crypto.randomUUID(), id: userId }
     );
 
     return res.json({ success: true });
   } catch (err) {
-    console.error('Change password error:', err);
+    logger.error({ err }, 'Change password error');
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -274,13 +322,13 @@ router.post('/2fa/send', authMiddleware, async (req, res) => {
     try {
       await sendOTPEmail(user.email, code);
     } catch (err) {
-      console.error('OTP email send error:', err.message);
+      logger.error({ err }, 'OTP email send error');
       return res.status(500).json({ message: 'Failed to send verification email' });
     }
 
     return res.json({ sent: true, maskedEmail: maskEmail(user.email) });
   } catch (err) {
-    console.error('2fa/send error:', err);
+    logger.error({ err }, '2fa/send error');
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -305,7 +353,7 @@ router.post('/2fa/verify', authMiddleware, async (req, res) => {
 
     return res.json({ success: true, twoFactorEnabled: true });
   } catch (err) {
-    console.error('2fa/verify error:', err);
+    logger.error({ err }, '2fa/verify error');
     return res.status(500).json({ message: 'Server error' });
   }
 });
@@ -359,7 +407,7 @@ router.post('/2fa/disable', authMiddleware, async (req, res) => {
 
     return res.json({ success: true, twoFactorEnabled: false });
   } catch (err) {
-    console.error('2fa/disable error:', err);
+    logger.error({ err }, '2fa/disable error');
     return res.status(500).json({ message: 'Server error' });
   }
 });

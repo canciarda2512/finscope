@@ -11,7 +11,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 export default function rateLimiter(req, res, next) {
-  const key = req.userId || req.ip;
+  const key = req.ip;
   const now = Date.now();
   let entry = clients.get(key);
 

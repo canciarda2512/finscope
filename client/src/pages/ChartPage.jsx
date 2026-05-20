@@ -3,6 +3,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/Authcontext';
 import { useTheme } from '../context/ThemeContext';
 import APIClient from '../services/APIClient';
+import WebSocketClient from '../services/WebSocketClient';
 import {
   MousePointer2, Minus, PencilLine, Brain, AlertTriangle, TrendingUp,
   ChevronDown, Lock, ArrowUpRight, ArrowDownRight,
@@ -11,24 +12,9 @@ import ChartView from '../components/ChartView';
 import AlertPanel from '../components/AlertPanel';
 import TradingPanel from '../components/TradingPanel';
 
-const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1D', '1W', '1M'];
-const INDICATORS = ['SMA', 'EMA', 'RSI', 'MACD', 'BB'];
-const AVAILABLE_SYMBOLS = [
-  'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-  'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT',
-  'TRXUSDT', 'MATICUSDT', 'LTCUSDT', 'BCHUSDT', 'UNIUSDT',
-  'ATOMUSDT', 'ETCUSDT', 'FILUSDT', 'APTUSDT', 'ARBUSDT',
-  'OPUSDT', 'NEARUSDT', 'INJUSDT', 'SUIUSDT', 'SEIUSDT',
-];
-
-const SYMBOL_NAMES = {
-  BTCUSDT: 'Bitcoin', ETHUSDT: 'Ethereum', BNBUSDT: 'BNB', SOLUSDT: 'Solana',
-  XRPUSDT: 'XRP', ADAUSDT: 'Cardano', DOGEUSDT: 'Dogecoin', AVAXUSDT: 'Avalanche',
-  LINKUSDT: 'Chainlink', DOTUSDT: 'Polkadot', TRXUSDT: 'TRON', MATICUSDT: 'Polygon',
-  LTCUSDT: 'Litecoin', BCHUSDT: 'Bitcoin Cash', UNIUSDT: 'Uniswap', ATOMUSDT: 'Cosmos',
-  ETCUSDT: 'Ethereum Classic', FILUSDT: 'Filecoin', APTUSDT: 'Aptos', ARBUSDT: 'Arbitrum',
-  OPUSDT: 'Optimism', NEARUSDT: 'NEAR', INJUSDT: 'Injective', SUIUSDT: 'Sui', SEIUSDT: 'Sei',
-};
+import {
+  SYMBOLS as AVAILABLE_SYMBOLS, SYMBOL_NAMES, TIMEFRAMES, INDICATORS,
+} from '../constants';
 
 function AiBanner({ result, onClose }) {
   const linR2  = result.models?.linear_r2 ?? null;
@@ -93,6 +79,7 @@ export default function ChartPage() {
   const [selectedOrderPrice, setSelectedOrderPrice] = useState('');
   const [pendingAlertPrice, setPendingAlertPrice] = useState(null);
   const [activeIndicators, setActiveIndicators] = useState([]);
+  const [drawings, setDrawings] = useState([]);
   const [showSymbolSearch, setShowSymbolSearch] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const [showRightPanel] = useState(true);
@@ -107,8 +94,8 @@ export default function ChartPage() {
   const [anomalies, setAnomalies] = useState([]);
   const [anomalyError, setAnomalyError] = useState(null);
   const [anomalyActive, setAnomalyActive] = useState(false);
+  const [indicatorData, setIndicatorData] = useState({});
 
-  const socketRef = useRef(null);
   const symbolSearchRef = useRef(null);
 
   useEffect(() => {
@@ -117,15 +104,22 @@ export default function ChartPage() {
   }, [searchParams, symbol]);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchCandles = async () => {
       setLoading(true); setError(null); setAiResult(null); setAiError(null);
       setAnomalies([]); setAnomalyError(null); setAnomalyActive(false); setLiveCandle(null);
       try {
-        const res = await APIClient.get('/chart/candles', { params: { symbol, timeframe } });
+        const [candlesRes, drawingsRes] = await Promise.all([
+          APIClient.get('/chart/candles', { params: { symbol, timeframe } }),
+          APIClient.get('/chart/drawings', { params: { symbol, timeframe } }).catch(() => ({ data: { drawings: [] } })),
+        ]);
+        if (cancelled) return;
+        const res = candlesRes;
         const formattedCandles = (res.data?.candles || [])
           .map(c => ({ time: Number(c.time), open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close) }))
           .sort((a, b) => a.time - b.time);
         setCandles(formattedCandles);
+        setDrawings(drawingsRes.data?.drawings || []);
         if (formattedCandles.length > 0) {
           const last = formattedCandles[formattedCandles.length - 1];
           setCurrentPrice(last.close);
@@ -134,26 +128,23 @@ export default function ChartPage() {
         }
         setQueryStats({ queryTime: res.data?.queryTime || '0ms', rowsScanned: res.data?.rowsScanned || 0 });
       } catch (err) {
-        console.error('Fetch error:', err);
+        if (cancelled) return;
         setError('Could not connect to the backend.');
-      } finally { setLoading(false); }
+      } finally { if (!cancelled) setLoading(false); }
     };
     fetchCandles();
-    if (socketRef.current) socketRef.current.close();
-    const socket = new WebSocket('ws://localhost:4000');
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.s !== symbol) return;
-        const k = msg.k;
-        const newCandle = { time: Math.floor(k.t / 1000), open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) };
-        setLiveCandle(newCandle);
-        setPrevPrice(prev => currentPrice || prev);
-        setCurrentPrice(newCandle.close);
-      } catch (err) { console.warn('WS parse error:', err); }
-    };
-    socketRef.current = socket;
-    return () => { if (socketRef.current) socketRef.current.close(); };
+    const unsubscribe = WebSocketClient.subscribe((msg) => {
+      if (cancelled) return;
+      if (msg.s !== symbol || !msg.k) return;
+      const k = msg.k;
+      const newCandle = { time: Math.floor(k.t / 1000), open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c) };
+      setLiveCandle(newCandle);
+      setCurrentPrice(prev => {
+        if (prev !== null) setPrevPrice(prev);
+        return newCandle.close;
+      });
+    });
+    return () => { cancelled = true; unsubscribe(); };
   }, [symbol, timeframe]);
 
   const handleAIPrediction = async () => {
@@ -181,6 +172,28 @@ export default function ChartPage() {
   const toggleIndicator = (ind) => setActiveIndicators(prev =>
     prev.includes(ind) ? prev.filter(i => i !== ind) : [...prev, ind]
   );
+
+  // Fetch indicator data from backend when active indicators change
+  useEffect(() => {
+    if (!activeIndicators.length) { setIndicatorData({}); return; }
+    let cancelled = false;
+
+    const fetchIndicators = async () => {
+      const results = {};
+      await Promise.all(activeIndicators.map(async (ind) => {
+        try {
+          const params = { symbol, timeframe, type: ind };
+          if (ind === 'RSI') params.period = 14;
+          else if (ind !== 'MACD') params.period = 20;
+          const res = await APIClient.get('/chart/indicators', { params });
+          if (!cancelled) results[ind] = res.data;
+        } catch (_) {}
+      }));
+      if (!cancelled) setIndicatorData(results);
+    };
+    fetchIndicators();
+    return () => { cancelled = true; };
+  }, [activeIndicators, symbol, timeframe]);
 
   const priceChange = currentPrice && prevPrice ? currentPrice - prevPrice : 0;
   const priceChangePercent = prevPrice ? ((priceChange / prevPrice) * 100) : 0;
@@ -375,7 +388,9 @@ export default function ChartPage() {
             <ChartView
               key={`${symbol}-${timeframe}-${theme}`}
               candles={candles} liveCandle={liveCandle} timeframe={timeframe} activeTool={activeTool}
+              savedDrawings={drawings}
               aiPrediction={aiResult} anomalies={anomalyActive ? anomalies : []} indicators={activeIndicators}
+              indicatorData={indicatorData}
               onPriceSelect={price => setSelectedOrderPrice(price?.toFixed(2) || '')}
               onSetAlert={isAuthenticated ? (price) => setPendingAlertPrice(price) : undefined}
               height="100%" theme={theme}

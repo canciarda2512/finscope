@@ -6,8 +6,8 @@ import APIClient from '../services/APIClient';
 function getPasswordStrength(password) {
   if (!password) return { label: '', color: '', width: '0%' };
   let score = 0;
-  if (password.length >= 6) score++;
-  if (password.length >= 10) score++;
+  if (password.length >= 8) score++;
+  if (password.length >= 12) score++;
   if (/[A-Z]/.test(password)) score++;
   if (/[0-9]/.test(password)) score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
@@ -33,16 +33,14 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
 
-    if (!formData.username.trim()) { setError('Username is required.'); return; }
     if (formData.password !== formData.confirmPassword) { setError('Passwords do not match.'); return; }
-    if (formData.password.length < 6) { setError('Password must be at least 6 characters.'); return; }
-    if (!/^\d{11}$/.test(formData.tcKimlikNo) || formData.tcKimlikNo[0] === '0') { setError('TC kimlik numarası 11 haneli olmalıdır ve 0 ile başlayamaz.'); return; }
-    if (!/^\+?\d{10,15}$/.test(formData.phoneNumber.replace(/\s/g, ''))) { setError('Geçerli bir telefon numarası giriniz.'); return; }
+    if (formData.password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (!/^\d{11}$/.test(formData.tcKimlikNo) || formData.tcKimlikNo[0] === '0') { setError('TC kimlik numarasi 11 haneli olmalidir ve 0 ile baslayamaz.'); return; }
+    if (!/^\+?\d{10,15}$/.test(formData.phoneNumber.replace(/\s/g, ''))) { setError('Gecerli bir telefon numarasi giriniz.'); return; }
 
     setLoading(true);
     try {
       await APIClient.post('/auth/register', {
-        username: formData.username.trim(),
         email: formData.email,
         password: formData.password,
         tcKimlikNo: formData.tcKimlikNo,
@@ -63,10 +61,10 @@ export default function RegisterPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--accent)' }}>
             <TrendingUp size={18} className="text-white" />
           </div>
-          <span className="text-white font-bold text-xl tracking-tight">FinScope</span>
+          <span className="font-bold text-xl tracking-tight" style={{ color: 'var(--text-primary)' }}>FinScope</span>
         </div>
 
         <div className="rounded-xl p-6" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
@@ -75,15 +73,7 @@ export default function RegisterPage() {
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Username</label>
-              <input
-                type="text" name="username" value={formData.username} onChange={handleChange} required
-                className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
-                placeholder="Choose a username"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Email</label>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Email</label>
               <input
                 type="email" name="email" value={formData.email} onChange={handleChange} required
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
@@ -91,15 +81,15 @@ export default function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Password</label>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Password</label>
               <input
                 type="password" name="password" value={formData.password} onChange={handleChange} required
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
-                placeholder="Min. 6 characters"
+                placeholder="Min. 8 characters"
               />
               {formData.password && (
                 <div className="mt-1.5">
-                  <div className="h-1 bg-[#1e2940] rounded-full overflow-hidden">
+                  <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: 'var(--bg-tertiary)' }}>
                     <div className={`h-full ${strength.color} rounded-full transition-all duration-300`} style={{ width: strength.width }} />
                   </div>
                   <p className={`text-[10px] mt-0.5 ${
@@ -113,7 +103,7 @@ export default function RegisterPage() {
               )}
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Confirm Password</label>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Confirm Password</label>
               <input
                 type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} required
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
@@ -121,16 +111,16 @@ export default function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">TC Kimlik No</label>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>TC Kimlik No</label>
               <input
                 type="text" name="tcKimlikNo" value={formData.tcKimlikNo} onChange={handleChange} required
                 maxLength={11}
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
-                placeholder="11 haneli TC kimlik numaranız"
+                placeholder="11 haneli TC kimlik numaraniz"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-slate-400 mb-1">Telefon Numarası</label>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Telefon Numarasi</label>
               <input
                 type="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
@@ -151,9 +141,9 @@ export default function RegisterPage() {
             </button>
           </form>
 
-          <p className="mt-5 text-center text-xs text-slate-500">
+          <p className="mt-5 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
             Already have an account?{' '}
-            <Link to="/login" className="text-blue-400 hover:text-blue-300 font-medium">Sign in</Link>
+            <Link to="/login" className="font-medium" style={{ color: 'var(--accent-text)' }}>Sign in</Link>
           </p>
         </div>
 

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import {
   getPerformanceDatapoints,
   getPortfolioSnapshot,
+  getEnrichedPositions,
+  getEnrichedTrades,
 } from '../services/PortfolioService.js';
 
 const router = Router();
@@ -17,8 +19,8 @@ router.get('/', async (req, res, next) => {
 
 router.get('/positions', async (req, res, next) => {
   try {
-    const snapshot = await getPortfolioSnapshot(req.userId);
-    return res.json({ positions: snapshot.positions });
+    const positions = await getEnrichedPositions(req.userId);
+    return res.json({ positions });
   } catch (err) {
     next(err);
   }
@@ -26,8 +28,8 @@ router.get('/positions', async (req, res, next) => {
 
 router.get('/history', async (req, res, next) => {
   try {
-    const snapshot = await getPortfolioSnapshot(req.userId);
-    return res.json({ trades: snapshot.trades });
+    const trades = await getEnrichedTrades(req.userId);
+    return res.json({ trades });
   } catch (err) {
     next(err);
   }

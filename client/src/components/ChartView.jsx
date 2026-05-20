@@ -23,6 +23,7 @@ export default function ChartView({
   anomalies = [],
   savedDrawings = [],
   indicators = [],
+  indicatorData = {},
   height = '100%',
   onPriceSelect,
   onSetAlert,
@@ -304,15 +305,10 @@ export default function ChartView({
     });
     indicatorSeriesRef.current = [];
 
-    if (!indicators?.length || !candles?.length) return;
-
-    const cleanData = candles
-      .map(c => ({ ...c, time: Math.floor(Number(c.time)), close: Number(c.close) }))
-      .filter(c => Number.isFinite(c.time) && Number.isFinite(c.close))
-      .sort((a, b) => a.time - b.time);
+    if (!indicators?.length) return;
 
     const addLine = (data, color, title) => {
-      if (data.length === 0) return;
+      if (!data?.length) return;
       const series = chartRef.current.addLineSeries({
         color,
         lineWidth: 1,
@@ -325,18 +321,17 @@ export default function ChartView({
       indicatorSeriesRef.current.push(series);
     };
 
-    if (indicators.includes('SMA')) {
-      addLine(simpleMovingAverage(cleanData, 20), '#38bdf8', 'SMA 20');
+    if (indicators.includes('SMA') && indicatorData.SMA?.values) {
+      addLine(indicatorData.SMA.values, '#38bdf8', 'SMA 20');
     }
-    if (indicators.includes('EMA')) {
-      addLine(exponentialMovingAverage(cleanData, 20), '#f59e0b', 'EMA 20');
+    if (indicators.includes('EMA') && indicatorData.EMA?.values) {
+      addLine(indicatorData.EMA.values, '#f59e0b', 'EMA 20');
     }
-    if (indicators.includes('BB')) {
-      const bands = bollingerBands(cleanData, 20, 2);
-      addLine(bands.upper, '#a855f7', 'BB Upper');
-      addLine(bands.lower, '#a855f7', 'BB Lower');
+    if (indicators.includes('BB') && indicatorData.BB) {
+      addLine(indicatorData.BB.upper, '#a855f7', 'BB Upper');
+      addLine(indicatorData.BB.lower, '#a855f7', 'BB Lower');
     }
-  }, [indicators, candles]);
+  }, [indicators, indicatorData]);
 
   // ── Sub-chart indicators: RSI and MACD ──
   useEffect(() => {
@@ -349,13 +344,6 @@ export default function ChartView({
       try { macdChartRef.current.remove(); } catch (_) {}
       macdChartRef.current = null;
     }
-
-    if (!candles?.length) return;
-
-    const cleanData = candles
-      .map(c => ({ ...c, time: Math.floor(Number(c.time)), close: Number(c.close) }))
-      .filter(c => Number.isFinite(c.time) && Number.isFinite(c.close))
-      .sort((a, b) => a.time - b.time);
 
     const isDarkSub = theme === 'dark';
     const subChartOptions = (container) => ({
@@ -371,9 +359,9 @@ export default function ChartView({
     });
 
     // RSI
-    if (indicators.includes('RSI') && rsiContainerRef.current) {
+    if (indicators.includes('RSI') && rsiContainerRef.current && indicatorData.RSI?.values?.length) {
       const rsiChart = createChart(rsiContainerRef.current, subChartOptions(rsiContainerRef.current));
-      const rsiData = calculateRSI(cleanData, 14);
+      const rsiData = indicatorData.RSI.values;
 
       const rsiSeries = rsiChart.addLineSeries({
         color: '#f59e0b',
@@ -385,39 +373,37 @@ export default function ChartView({
       rsiSeries.setData(rsiData);
 
       // Overbought line (70)
-      if (rsiData.length > 0) {
-        const obSeries = rsiChart.addLineSeries({
-          color: '#ef444466',
-          lineWidth: 1,
-          lineStyle: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
-        obSeries.setData(rsiData.map(d => ({ time: d.time, value: 70 })));
+      const obSeries = rsiChart.addLineSeries({
+        color: '#ef444466',
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      obSeries.setData(rsiData.map(d => ({ time: d.time, value: 70 })));
 
-        // Oversold line (30)
-        const osSeries = rsiChart.addLineSeries({
-          color: '#22c55e66',
-          lineWidth: 1,
-          lineStyle: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          crosshairMarkerVisible: false,
-        });
-        osSeries.setData(rsiData.map(d => ({ time: d.time, value: 30 })));
-      }
+      // Oversold line (30)
+      const osSeries = rsiChart.addLineSeries({
+        color: '#22c55e66',
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      osSeries.setData(rsiData.map(d => ({ time: d.time, value: 30 })));
 
       rsiChart.timeScale().fitContent();
       rsiChartRef.current = rsiChart;
     }
 
     // MACD
-    if (indicators.includes('MACD') && macdContainerRef.current) {
+    if (indicators.includes('MACD') && macdContainerRef.current && indicatorData.MACD) {
       const macdChart = createChart(macdContainerRef.current, subChartOptions(macdContainerRef.current));
-      const { macdLine, signalLine, histogram } = calculateMACD(cleanData);
+      const { macdLine, signalLine, histogram } = indicatorData.MACD;
 
-      if (histogram.length > 0) {
+      if (histogram?.length > 0) {
         const histSeries = macdChart.addHistogramSeries({
           color: '#334155',
           priceLineVisible: false,
@@ -430,7 +416,7 @@ export default function ChartView({
         })));
       }
 
-      if (macdLine.length > 0) {
+      if (macdLine?.length > 0) {
         const macdSeries = macdChart.addLineSeries({
           color: '#38bdf8',
           lineWidth: 1,
@@ -441,7 +427,7 @@ export default function ChartView({
         macdSeries.setData(macdLine);
       }
 
-      if (signalLine.length > 0) {
+      if (signalLine?.length > 0) {
         const signalSeries = macdChart.addLineSeries({
           color: '#f97316',
           lineWidth: 1,
@@ -478,7 +464,7 @@ export default function ChartView({
         macdChartRef.current = null;
       }
     };
-  }, [indicators, candles]);
+  }, [indicators, indicatorData]);
 
   // ── Live candle update ──
   useEffect(() => {
@@ -655,7 +641,7 @@ export default function ChartView({
         <div className="mt-1" style={{ borderTop: '1px solid var(--border-primary)' }}>
           <div className="flex items-center gap-2 px-1 pt-1 pb-0.5">
             <span className="text-[9px] font-bold text-amber-400 uppercase tracking-widest">RSI (14)</span>
-            <span className="text-[9px] text-slate-600">— 70 overbought · 30 oversold</span>
+            <span className="text-[9px] text-[var(--text-dim)]">— 70 overbought · 30 oversold</span>
           </div>
           <div ref={rsiContainerRef} className="w-full" />
         </div>
@@ -665,7 +651,7 @@ export default function ChartView({
         <div className="mt-1" style={{ borderTop: '1px solid var(--border-primary)' }}>
           <div className="flex items-center gap-2 px-1 pt-1 pb-0.5">
             <span className="text-[9px] font-bold text-sky-400 uppercase tracking-widest">MACD (12,26,9)</span>
-            <span className="text-[9px] text-slate-600">— <span className="text-sky-400">MACD</span> · <span className="text-orange-400">Signal</span></span>
+            <span className="text-[9px] text-[var(--text-dim)]">— <span className="text-sky-400">MACD</span> · <span className="text-orange-400">Signal</span></span>
           </div>
           <div ref={macdContainerRef} className="w-full" />
         </div>
@@ -689,104 +675,3 @@ function timeframeToSeconds(tf) {
   return map[tf] ?? 300;
 }
 
-function simpleMovingAverage(data, period) {
-  const result = [];
-  for (let i = period - 1; i < data.length; i += 1) {
-    const slice = data.slice(i - period + 1, i + 1);
-    const value = slice.reduce((sum, item) => sum + item.close, 0) / period;
-    result.push({ time: data[i].time, value });
-  }
-  return result;
-}
-
-function exponentialMovingAverage(data, period) {
-  if (data.length < period) return [];
-
-  const result = [];
-  const multiplier = 2 / (period + 1);
-  let ema = data.slice(0, period).reduce((sum, item) => sum + item.close, 0) / period;
-  result.push({ time: data[period - 1].time, value: ema });
-
-  for (let i = period; i < data.length; i += 1) {
-    ema = ((data[i].close - ema) * multiplier) + ema;
-    result.push({ time: data[i].time, value: ema });
-  }
-  return result;
-}
-
-function bollingerBands(data, period, deviations) {
-  const upper = [];
-  const lower = [];
-
-  for (let i = period - 1; i < data.length; i += 1) {
-    const slice = data.slice(i - period + 1, i + 1);
-    const mean = slice.reduce((sum, item) => sum + item.close, 0) / period;
-    const variance = slice.reduce((sum, item) => sum + ((item.close - mean) ** 2), 0) / period;
-    const stdDev = Math.sqrt(variance);
-
-    upper.push({ time: data[i].time, value: mean + (stdDev * deviations) });
-    lower.push({ time: data[i].time, value: mean - (stdDev * deviations) });
-  }
-
-  return { upper, lower };
-}
-
-function calculateRSI(data, period = 14) {
-  if (data.length < period + 1) return [];
-  const result = [];
-  let avgGain = 0;
-  let avgLoss = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const diff = data[i].close - data[i - 1].close;
-    if (diff > 0) avgGain += diff;
-    else avgLoss += Math.abs(diff);
-  }
-  avgGain /= period;
-  avgLoss /= period;
-  result.push({ time: data[period].time, value: 100 - 100 / (1 + avgGain / (avgLoss || 1e-10)) });
-
-  for (let i = period + 1; i < data.length; i++) {
-    const diff = data[i].close - data[i - 1].close;
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? Math.abs(diff) : 0;
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
-    result.push({ time: data[i].time, value: 100 - 100 / (1 + avgGain / (avgLoss || 1e-10)) });
-  }
-  return result;
-}
-
-function calculateMACD(data, fast = 12, slow = 26, signal = 9) {
-  const fastEmaValues = exponentialMovingAverage(data, fast);
-  const slowEmaValues = exponentialMovingAverage(data, slow);
-
-  const fastMap = new Map(fastEmaValues.map(d => [d.time, d.value]));
-  const slowMap = new Map(slowEmaValues.map(d => [d.time, d.value]));
-
-  const macdLine = [];
-  for (const [time, slowVal] of slowMap) {
-    if (fastMap.has(time)) {
-      macdLine.push({ time, value: fastMap.get(time) - slowVal });
-    }
-  }
-  macdLine.sort((a, b) => a.time - b.time);
-
-  if (macdLine.length < signal) return { macdLine, signalLine: [], histogram: [] };
-
-  const k = 2 / (signal + 1);
-  let prev = macdLine.slice(0, signal).reduce((s, d) => s + d.value, 0) / signal;
-  const signalLine = [{ time: macdLine[signal - 1].time, value: prev }];
-
-  for (let i = signal; i < macdLine.length; i++) {
-    prev = macdLine[i].value * k + prev * (1 - k);
-    signalLine.push({ time: macdLine[i].time, value: prev });
-  }
-
-  const sigMap = new Map(signalLine.map(d => [d.time, d.value]));
-  const histogram = macdLine
-    .filter(d => sigMap.has(d.time))
-    .map(d => ({ time: d.time, value: d.value - sigMap.get(d.time) }));
-
-  return { macdLine, signalLine, histogram };
-}

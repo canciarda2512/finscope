@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import logger from '../utils/logger.js';
 import { execute, insert, query } from '../services/ClickHouseClient.js';
 import { fetch24hTickers } from '../services/BinanceService.js';
 
@@ -67,18 +68,18 @@ async function getSparklineData(symbols) {
   if (!symbols.length) return new Map();
 
   try {
-    const symbolList = symbols.map(s => `'${s}'`).join(',');
     const { rows } = await query(
       `SELECT symbol,
               groupArray(close) AS closes
        FROM (
          SELECT symbol, close
          FROM market_data
-         WHERE symbol IN (${symbolList})
+         WHERE symbol IN ({symbols:Array(String)})
            AND timestamp >= now() - INTERVAL 7 DAY
          ORDER BY timestamp ASC
        )
-       GROUP BY symbol`
+       GROUP BY symbol`,
+      { symbols }
     );
 
     const result = new Map();
@@ -91,7 +92,7 @@ async function getSparklineData(symbols) {
     }
     return result;
   } catch (err) {
-    console.error('Sparkline data error:', err.message);
+    logger.error({ err }, 'Sparkline data error');
     return new Map();
   }
 }

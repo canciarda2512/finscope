@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import logger from '../utils/logger.js';
 import {
   cancelLimitOrder,
   createLimitOrder,
@@ -8,6 +9,8 @@ import {
 } from '../services/PortfolioService.js';
 import { query } from '../services/ClickHouseClient.js';
 import { createNotification } from '../services/NotificationService.js';
+
+import { validateSymbol, validateNumber } from '../utils/validation.js';
 
 const router = Router();
 
@@ -19,14 +22,17 @@ function toNumber(value) {
 router.post('/market', async (req, res, next) => {
   try {
     const userId = req.userId;
-    const symbol = String(req.body.symbol || '').toUpperCase();
+    const symbol = validateSymbol(req.body.symbol);
+    if (!symbol) {
+      return res.status(400).json({ message: `Invalid symbol: ${req.body.symbol}` });
+    }
     const side = String(req.body.side || 'buy').toLowerCase();
     const amountUsd = toNumber(req.body.amountUsd);
     const requestedQuantity = toNumber(req.body.quantity);
     const sellAll = req.body.sellAll === true;
     const latestPrice = await getLatestPrice(symbol);
 
-    if (!latestPrice) {
+    if (!latestPrice || latestPrice <= 0) {
       return res.status(422).json({ message: 'No live price is available for this symbol yet.' });
     }
 
@@ -39,6 +45,10 @@ router.post('/market', async (req, res, next) => {
       quantity = toNumber(rows[0]?.quantity);
     } else {
       quantity = requestedQuantity > 0 ? requestedQuantity : amountUsd / latestPrice;
+    }
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return res.status(400).json({ message: 'Invalid quantity or amount.' });
     }
 
     const trade = await executeTrade({
@@ -56,7 +66,7 @@ router.post('/market', async (req, res, next) => {
       title: `Market ${side === 'buy' ? 'Buy' : 'Sell'} Executed`,
       message: `${side.toUpperCase()} ${quantity.toFixed(6)} ${symbol.replace('USDT', '')} at $${latestPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
       symbol,
-    }).catch(err => console.error('Notification error (market trade):', err.message));
+    }).catch(err => logger.error({ err }, 'Notification error (market trade)'));
 
     return res.json({ trade });
   } catch (err) {
@@ -68,14 +78,21 @@ router.post('/market', async (req, res, next) => {
 router.post('/limit', async (req, res, next) => {
   try {
     const userId = req.userId;
-    const symbol = String(req.body.symbol || '').toUpperCase();
+    const symbol = validateSymbol(req.body.symbol);
+    if (!symbol) {
+      return res.status(400).json({ message: `Invalid symbol: ${req.body.symbol}` });
+    }
     const side = String(req.body.side || 'buy').toLowerCase();
     const targetPrice = toNumber(req.body.targetPrice);
     const amountUsd = toNumber(req.body.amountUsd);
     const requestedQuantity = toNumber(req.body.quantity);
     const quantity = requestedQuantity > 0
       ? requestedQuantity
-      : amountUsd / targetPrice;
+      : targetPrice > 0 ? amountUsd / targetPrice : 0;
+
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return res.status(400).json({ message: 'Invalid quantity or amount.' });
+    }
 
     const order = await createLimitOrder({
       userId,
@@ -92,7 +109,7 @@ router.post('/limit', async (req, res, next) => {
       title: `Limit ${side === 'buy' ? 'Buy' : 'Sell'} Placed`,
       message: `${side.toUpperCase()} ${quantity.toFixed(6)} ${symbol.replace('USDT', '')} at target $${targetPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
       symbol,
-    }).catch(err => console.error('Notification error (limit order create):', err.message));
+    }).catch(err => logger.error({ err }, 'Notification error (limit order create)'));
 
     return res.json({ order });
   } catch (err) {

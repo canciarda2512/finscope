@@ -1,5 +1,6 @@
 import '../config/env.js';
 import nodemailer from 'nodemailer';
+import logger from '../utils/logger.js';
 
 let _transporter = null;
 
@@ -25,7 +26,7 @@ export async function sendOTPEmail(to, code) {
 
   if (!t) {
     // Dev fallback — log OTP to console when SMTP is not configured
-    console.log(`\n📧 [OTP] ${to} → ${code}\n`);
+    logger.info({ to, code }, 'OTP (SMTP not configured)');
     return;
   }
 

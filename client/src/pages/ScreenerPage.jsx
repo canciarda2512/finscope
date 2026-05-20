@@ -43,9 +43,9 @@ function percent(value) {
 
 function rsiTone(value) {
   const rsi = Number(value);
-  if (rsi >= 70) return 'bg-red-500/10 text-red-400';
-  if (rsi <= 30) return 'bg-emerald-500/10 text-emerald-400';
-  return 'bg-blue-500/10 text-blue-400';
+  if (rsi >= 70) return { backgroundColor: 'var(--red-muted)', color: 'var(--red)' };
+  if (rsi <= 30) return { backgroundColor: 'var(--green-muted)', color: 'var(--green)' };
+  return { backgroundColor: 'var(--accent-muted)', color: 'var(--accent-text)' };
 }
 
 export default function ScreenerPage() {
@@ -148,7 +148,7 @@ export default function ScreenerPage() {
         </div>
 
         {error && (
-          <div className="bg-red-950/40 border-x border-red-900 px-6 py-3 text-sm text-red-300">
+          <div className="border-x px-6 py-3 text-sm" style={{ backgroundColor: 'var(--red-muted)', borderColor: 'var(--red)', color: 'var(--red)' }}>
             {error}
           </div>
         )}
@@ -161,7 +161,7 @@ export default function ScreenerPage() {
                 <th className="px-6 py-4 font-bold">Symbol</th>
                 <th className="px-6 py-4 font-bold">Current Price</th>
                 <th className="px-6 py-4 font-bold">24h % Change</th>
-                <th className="px-6 py-4 font-bold">Volume</th>
+                <th className="px-6 py-4 font-bold">Volume (USDT, 24h)</th>
                 {showRsi && <th className="px-6 py-4 font-bold">RSI</th>}
                 <th className="px-6 py-4 font-bold text-right">View</th>
               </tr>
@@ -180,7 +180,7 @@ export default function ScreenerPage() {
                       {formatSymbol(item.symbol)}
                     </td>
                     <td className="px-6 py-4 font-mono text-sm">${money(item.currentPrice)}</td>
-                    <td className={`px-6 py-4 text-sm font-bold ${up ? 'text-green-500' : 'text-red-500'}`}>
+                    <td className="px-6 py-4 text-sm font-bold" style={{ color: up ? 'var(--green)' : 'var(--red)' }}>
                       <div className="flex items-center gap-1">
                         {up ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                         {percent(item.change24h)}
@@ -191,7 +191,7 @@ export default function ScreenerPage() {
                     </td>
                     {showRsi && (
                       <td className="px-6 py-4">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${rsiTone(item.rsi)}`}>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded" style={rsiTone(item.rsi)}>
                           {Number(item.rsi).toFixed(2)}
                         </span>
                       </td>

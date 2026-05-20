@@ -24,12 +24,12 @@ function AlertRow({ alert, deleting, onDelete }) {
   const triggeredAt = formatDate(alert.missedAt || alert.triggeredAt);
 
   return (
-    <div className="flex items-center justify-between text-[10px] py-1 border-b border-current/10 last:border-0">
+    <div className="flex items-center justify-between text-[10px] py-1 last:border-0" style={{ borderBottom: '1px solid var(--border-primary)' }}>
       <div>
-        <div className="font-bold text-white">
+        <div className="font-bold" style={{ color: 'var(--text-primary)' }}>
           {alert.symbol} {alert.condition} ${formatPrice(alert.targetPrice)}
         </div>
-        <div className={triggered ? 'text-orange-400' : 'text-slate-500'}>
+        <div style={{ color: triggered ? '#f97316' : 'var(--text-muted)' }}>
           {triggered ? `Triggered${triggeredAt ? ` - ${triggeredAt}` : ''}` : 'Active'}
         </div>
       </div>
@@ -37,7 +37,8 @@ function AlertRow({ alert, deleting, onDelete }) {
       <button
         onClick={() => onDelete(alert.id)}
         disabled={deleting}
-        className="text-red-400 hover:text-red-300 disabled:text-slate-600 disabled:cursor-not-allowed"
+        className="disabled:cursor-not-allowed"
+        style={{ color: deleting ? 'var(--text-dim)' : 'var(--red)' }}
         title="Delete alert"
       >
         {deleting ? '...' : 'x'}
@@ -149,39 +150,39 @@ export default function AlertPanel({ symbol, currentPrice, pendingPrice, onPendi
   return (
     <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-primary)' }}>
       <div className="flex items-center justify-between mb-2">
-        <div className="text-[10px] font-bold text-slate-500 uppercase">
+        <div className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>
           Price Alerts
         </div>
         {currentPrice && (
-          <div className="text-[10px] text-slate-500 font-mono">
+          <div className="text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
             ${formatPrice(currentPrice)}
           </div>
         )}
       </div>
 
       {loading && (
-        <div className="text-[10px] text-slate-600 mb-2">Loading...</div>
+        <div className="text-[10px] mb-2" style={{ color: 'var(--text-dim)' }}>Loading...</div>
       )}
 
       {!isAuthenticated && (
-        <div className="text-[10px] text-amber-400 bg-amber-950/40 border border-amber-900 rounded px-2 py-1 mb-2">
-          Alertleri kullanmak icin giris yapin.
+        <div className="text-[10px] rounded px-2 py-1 mb-2" style={{ color: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)' }}>
+          Sign in to use price alerts.
         </div>
       )}
 
       {error && (
-        <div className="text-[10px] text-red-400 bg-red-950/40 border border-red-900 rounded px-2 py-1 mb-2">
+        <div className="text-[10px] rounded px-2 py-1 mb-2" style={{ color: 'var(--red)', backgroundColor: 'var(--red-muted)', border: '1px solid var(--red)' }}>
           {error}
         </div>
       )}
 
       {!loading && isAuthenticated && alerts.length === 0 && (
-        <div className="text-[10px] text-slate-600 mb-2">Henuz alert yok.</div>
+        <div className="text-[10px] mb-2" style={{ color: 'var(--text-dim)' }}>No alerts yet.</div>
       )}
 
       {triggeredAlerts.length > 0 && (
         <div className="mb-2">
-          <div className="text-[9px] font-bold uppercase text-orange-400 mb-1">
+          <div className="text-[9px] font-bold uppercase mb-1" style={{ color: '#f97316' }}>
             Triggered While Away
           </div>
           {triggeredAlerts.map(alert => (
@@ -197,7 +198,7 @@ export default function AlertPanel({ symbol, currentPrice, pendingPrice, onPendi
 
       {activeAlerts.length > 0 && (
         <div className="mb-2">
-          <div className="text-[9px] font-bold uppercase text-slate-500 mb-1">
+          <div className="text-[9px] font-bold uppercase mb-1" style={{ color: 'var(--text-muted)' }}>
             Active
           </div>
           {activeAlerts.map(alert => (
@@ -216,7 +217,8 @@ export default function AlertPanel({ symbol, currentPrice, pendingPrice, onPendi
           value={condition}
           onChange={e => setCondition(e.target.value)}
           disabled={!isAuthenticated || saving}
-          className="border rounded px-1 py-1 text-[10px] text-white disabled:text-slate-500"
+          className="rounded px-1 py-1 text-[10px] outline-none disabled:opacity-50"
+          style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
         >
           <option value=">">&gt;</option>
           <option value="<">&lt;</option>
@@ -228,13 +230,15 @@ export default function AlertPanel({ symbol, currentPrice, pendingPrice, onPendi
           value={targetPrice}
           onChange={e => setTargetPrice(e.target.value)}
           disabled={!isAuthenticated || saving}
-          className="flex-1 border rounded px-2 py-1 text-[10px] text-white outline-none disabled:text-slate-500"
+          className="flex-1 rounded px-2 py-1 text-[10px] outline-none disabled:opacity-50"
+          style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
         />
 
         <button
           onClick={addAlert}
           disabled={!canSubmit}
-          className="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white text-[10px] px-2 py-1 rounded font-bold"
+          className="text-white text-[10px] px-2 py-1 rounded font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ backgroundColor: 'var(--accent)' }}
         >
           {saving ? '...' : '+'}
         </button>

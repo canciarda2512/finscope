@@ -12,6 +12,12 @@ export default function authMiddleware(req, res, next) {
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Reject purpose-scoped tokens (e.g. 2FA temp tokens) — they are not access tokens
+    if (payload.purpose) {
+      return res.status(401).json({ message: 'Invalid token type' });
+    }
+
     req.userId = payload.userId;
     next();
   } catch {

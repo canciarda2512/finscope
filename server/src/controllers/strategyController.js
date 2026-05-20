@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { query, insert, execute } from '../services/ClickHouseClient.js';
 import { runBacktest } from '../services/BacktestEngine.js';
+import { validateString, clampNumber, normalizeSymbol } from '../utils/validation.js';
 
 const router = Router();
 
@@ -17,20 +18,39 @@ router.get('/', async (req, res, next) => {
       { userId: req.userId }
     );
 
-    // Attach conditions and actions to each strategy
-    const enriched = await Promise.all(strategies.map(async (s) => {
-      const [{ rows: conditions }, { rows: actions }] = await Promise.all([
-        query(`SELECT * FROM strategy_conditions FINAL WHERE strategyId = {id:String}`, { id: s.id }),
-        query(`SELECT * FROM strategy_actions FINAL WHERE strategyId = {id:String}`, { id: s.id }),
-      ]);
+    // Batch-fetch all conditions and actions in 2 queries instead of 2N
+    const strategyIds = strategies.map(s => s.id);
+    let allConditions = [];
+    let allActions = [];
 
-      return {
-        ...s,
-        isActive: s.isActive === 1 || s.isActive === '1',
-        lastBacktestResult: s.lastBacktestResult ? tryParseJSON(s.lastBacktestResult) : null,
-        conditions,
-        actions,
-      };
+    if (strategyIds.length > 0) {
+      const placeholders = strategyIds.map((_, i) => `{id${i}:String}`).join(', ');
+      const params = Object.fromEntries(strategyIds.map((id, i) => [`id${i}`, id]));
+
+      [{ rows: allConditions }, { rows: allActions }] = await Promise.all([
+        query(`SELECT * FROM strategy_conditions FINAL WHERE strategyId IN (${placeholders})`, params),
+        query(`SELECT * FROM strategy_actions FINAL WHERE strategyId IN (${placeholders})`, params),
+      ]);
+    }
+
+    // Group by strategyId in memory
+    const conditionsByStrategy = new Map();
+    const actionsByStrategy = new Map();
+    for (const c of allConditions) {
+      if (!conditionsByStrategy.has(c.strategyId)) conditionsByStrategy.set(c.strategyId, []);
+      conditionsByStrategy.get(c.strategyId).push(c);
+    }
+    for (const a of allActions) {
+      if (!actionsByStrategy.has(a.strategyId)) actionsByStrategy.set(a.strategyId, []);
+      actionsByStrategy.get(a.strategyId).push(a);
+    }
+
+    const enriched = strategies.map(s => ({
+      ...s,
+      isActive: s.isActive === 1 || s.isActive === '1',
+      lastBacktestResult: s.lastBacktestResult ? tryParseJSON(s.lastBacktestResult) : null,
+      conditions: conditionsByStrategy.get(s.id) || [],
+      actions: actionsByStrategy.get(s.id) || [],
     }));
 
     res.json({ strategies: enriched });
@@ -42,9 +62,10 @@ router.get('/', async (req, res, next) => {
 // ── POST /api/strategy — create a new strategy ──
 router.post('/', async (req, res, next) => {
   try {
-    const { name, conditions = [], actions = [] } = req.body;
+    const { name, symbol = 'BTCUSDT', conditions = [], actions = [] } = req.body;
+    const trimmedName = validateString(name);
 
-    if (!name || !name.trim()) {
+    if (!trimmedName) {
       return res.status(400).json({ message: 'Strategy name is required.' });
     }
     if (conditions.length === 0) {
@@ -54,12 +75,14 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ message: 'At least one action is required.' });
     }
 
+    const normalizedSymbol = normalizeSymbol(symbol) || 'BTCUSDT';
     const strategyId = crypto.randomUUID();
 
     await insert('strategies', [{
       id: strategyId,
       userId: req.userId,
-      name: name.trim(),
+      name: trimmedName,
+      symbol: normalizedSymbol,
       isActive: 0,
       lastBacktestResult: '',
       createdAt: nowCH(),
@@ -86,7 +109,7 @@ router.post('/', async (req, res, next) => {
       insert('strategy_actions', actionRows),
     ]);
 
-    res.json({ strategyId, name: name.trim(), conditions: conditionRows, actions: actionRows });
+    res.json({ strategyId, name: trimmedName, symbol: normalizedSymbol, conditions: conditionRows, actions: actionRows });
   } catch (err) {
     next(err);
   }
@@ -113,8 +136,8 @@ router.post('/:id/backtest', async (req, res, next) => {
       query(`SELECT * FROM strategy_actions FINAL WHERE strategyId = {id:String}`, { id: strategyId }),
     ]);
 
-    // Fetch historical candles
-    const limitDays = Math.min(Math.max(Number(days) || 180, 30), 365);
+    // Fetch historical candles from the daily table (1 year of daily bars)
+    const limitDays = clampNumber(days, 30, 365, 180);
     const { rows: candleRows } = await query(
       `
       SELECT
@@ -124,7 +147,7 @@ router.post('/:id/backtest', async (req, res, next) => {
         min(low)                 AS low,
         argMax(close, timestamp) AS close,
         sum(volume)              AS volume
-      FROM market_data
+      FROM market_data_daily
       WHERE symbol = {symbol:String}
         AND timestamp >= now() - INTERVAL {days:UInt32} DAY
       GROUP BY time
@@ -191,6 +214,16 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const id = req.params.id;
     const userId = req.userId;
+
+    // Verify ownership before deleting conditions/actions
+    const { rows } = await query(
+      `SELECT id FROM strategies FINAL WHERE id = {id:String} AND userId = {userId:String} LIMIT 1`,
+      { id, userId }
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Strategy not found.' });
+    }
+
     await Promise.all([
       execute(`ALTER TABLE strategies DELETE WHERE id = {id:String} AND userId = {userId:String}`, { id, userId }),
       execute(`ALTER TABLE strategy_conditions DELETE WHERE strategyId = {id:String}`, { id }),

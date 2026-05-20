@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, RefreshCw, Search, X } from 'lucide-react';
 import APIClient from '../services/APIClient';
+import WebSocketClient from '../services/WebSocketClient';
 import WatchlistPanel, { ASSET_NAMES, money, pct } from '../components/WatchlistPanel';
 
 function mergeLivePrice(asset, livePrice, liveVolume) {
@@ -153,7 +154,7 @@ function AddAssetModal({ watchedSymbols, onAdd, onClose }) {
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right">
                     <div className="font-mono text-xs" style={{ color: 'var(--text-primary)' }}>${money(item.price)}</div>
-                    <div className={`text-[10px] font-bold ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className="text-[10px] font-bold" style={{ color: up ? 'var(--green)' : 'var(--red)' }}>
                       {pct(item.change24h)}
                     </div>
                   </div>
@@ -185,7 +186,6 @@ function AddAssetModal({ watchedSymbols, onAdd, onClose }) {
 
 export default function WatchlistPage() {
   const navigate = useNavigate();
-  const socketRef = useRef(null);
   const [search, setSearch] = useState('');
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -215,34 +215,22 @@ export default function WatchlistPage() {
   }, []);
 
   useEffect(() => {
-    if (socketRef.current) socketRef.current.close();
+    const unsubStatus = WebSocketClient.onStatus(setConnected);
+    const unsubMessages = WebSocketClient.subscribe((msg) => {
+      const kline = msg.k;
+      if (!msg.s || !kline) return;
 
-    const socket = new WebSocket('ws://localhost:4000');
-    socket.onopen = () => setConnected(true);
-    socket.onclose = () => setConnected(false);
-    socket.onerror = () => setConnected(false);
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        const kline = msg.k;
-        if (!msg.s || !kline) return;
+      const livePrice = Number(kline.c);
+      const liveVolume = Number(kline.q || kline.v || 0);
+      if (!Number.isFinite(livePrice) || livePrice <= 0) return;
 
-        const livePrice = Number(kline.c);
-        const liveVolume = Number(kline.q || kline.v || 0);
-        if (!Number.isFinite(livePrice) || livePrice <= 0) return;
-
-        setAssets(prev => prev.map(asset => (
-          asset.symbol === msg.s
-            ? mergeLivePrice(asset, livePrice, liveVolume)
-            : asset
-        )));
-      } catch (err) {
-        console.warn('Watchlist websocket parse error:', err);
-      }
-    };
-
-    socketRef.current = socket;
-    return () => socket.close();
+      setAssets(prev => prev.map(asset => (
+        asset.symbol === msg.s
+          ? mergeLivePrice(asset, livePrice, liveVolume)
+          : asset
+      )));
+    });
+    return () => { unsubStatus(); unsubMessages(); };
   }, []);
 
   const watchedSymbols = useMemo(() => new Set(assets.map(asset => asset.symbol)), [assets]);
@@ -301,7 +289,7 @@ export default function WatchlistPage() {
 
           <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
             <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-dim)]" size={18} />
               <input
                 type="text"
                 placeholder="Search assets..."
@@ -335,9 +323,9 @@ export default function WatchlistPage() {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-300 flex items-center justify-between">
+          <div className="mb-4 rounded-lg px-4 py-3 text-sm flex items-center justify-between" style={{ border: '1px solid var(--red)', backgroundColor: 'var(--red-muted)', color: 'var(--red)' }}>
             {error}
-            <button onClick={() => setError('')} className="text-red-400 hover:text-red-200 ml-4">
+            <button onClick={() => setError('')} className="ml-4" style={{ color: 'var(--red)' }}>
               <X size={14} />
             </button>
           </div>

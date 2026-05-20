@@ -1,9 +1,7 @@
 import { execute, query } from './ClickHouseClient.js';
 import { createNotification } from './NotificationService.js';
-
-function normalizeTriggered(value) {
-  return value === 1 || value === '1' || value === true;
-}
+import { acquireLock, releaseLock } from './RedisBuffer.js';
+import logger from '../utils/logger.js';
 
 export async function checkAndTriggerAlerts(symbol, price) {
   const normalizedSymbol = String(symbol || '').toUpperCase();
@@ -26,31 +24,44 @@ export async function checkAndTriggerAlerts(symbol, price) {
     { symbol: normalizedSymbol, price: currentPrice }
   );
 
-  const activeMatches = rows.filter(alert => !normalizeTriggered(alert.triggered));
+  const triggered = [];
 
-  for (const alert of activeMatches) {
-    await execute(
-      `
-      ALTER TABLE alerts
-      UPDATE triggered = 1,
-             triggeredAt = now64(3)
-      WHERE symbol = {symbol:String}
-        AND id = {id:String}
-        AND triggered = 0
-      `,
-      { symbol: normalizedSymbol, id: alert.id }
-    );
+  for (const alert of rows) {
+    // Distributed lock: prevents duplicate trigger across multiple instances
+    const lockKey = `alert:${alert.id}`;
+    const acquired = await acquireLock(lockKey, 30);
+    if (!acquired) continue;
 
-    createNotification({
-      userId: alert.userId,
-      type: 'price_alert_triggered',
-      title: 'Price Alert Triggered',
-      message: `${normalizedSymbol.replace('USDT', '')} ${alert.condition} $${Number(alert.targetPrice).toLocaleString('en-US', { maximumFractionDigits: 2 })} - current $${currentPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-      symbol: normalizedSymbol,
-    }).catch(err => console.error('Notification error (price alert):', err.message));
+    try {
+      await execute(
+        `
+        ALTER TABLE alerts
+        UPDATE triggered = 1,
+               triggeredAt = now64(3)
+        WHERE symbol = {symbol:String}
+          AND id = {id:String}
+          AND triggered = 0
+        `,
+        { symbol: normalizedSymbol, id: alert.id }
+      );
+
+      triggered.push(alert);
+
+      createNotification({
+        userId: alert.userId,
+        type: 'price_alert_triggered',
+        title: 'Price Alert Triggered',
+        message: `${normalizedSymbol.replace('USDT', '')} ${alert.condition} $${Number(alert.targetPrice).toLocaleString('en-US', { maximumFractionDigits: 2 })} — current $${currentPrice.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+        symbol: normalizedSymbol,
+      }).catch(err => logger.error({ err }, 'Notification error (price alert)'));
+    } catch (err) {
+      logger.error({ err, alertId: alert.id }, 'Alert trigger failed');
+    } finally {
+      await releaseLock(lockKey);
+    }
   }
 
-  return activeMatches;
+  return triggered;
 }
 
 export default {
