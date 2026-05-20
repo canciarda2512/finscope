@@ -26,7 +26,7 @@ function getOptionalUserId(req) {
   }
 }
 
-import { TF_INTERVAL, TF_LIMIT, DAILY_TF, TIMEFRAMES } from '../config/constants.js';
+import { TF_INTERVAL, DAILY_TF, TIMEFRAMES } from '../config/constants.js';
 import { validateSymbol, validateEnum } from '../utils/validation.js';
 
 const tableFor = tf => DAILY_TF.has(tf) ? 'market_data_daily' : 'market_data';
@@ -54,7 +54,6 @@ router.get('/candles', responseCache(
   if (!validateParams(symbol, timeframe, res)) return;
 
   const interval = TF_INTERVAL[timeframe];
-  const limit = TF_LIMIT[timeframe];
 
   try {
     const start = Date.now();
@@ -70,25 +69,21 @@ router.get('/candles', responseCache(
       FROM ${tableFor(timeframe)}
       WHERE symbol = {sym: String}
       GROUP BY time
-      ORDER BY time DESC
-      LIMIT {lim: UInt32}
+      ORDER BY time ASC
     `;
 
     const { rows, queryTime: dbQueryTime, rowsRead } = await query(sql, {
       sym: symbol.toUpperCase(),
-      lim: limit,
     });
 
-    const candles = rows
-      .map(row => ({
-        time: Number(row.time),
-        open: parseFloat(row.open),
-        high: parseFloat(row.high),
-        low: parseFloat(row.low),
-        close: parseFloat(row.close),
-        volume: parseFloat(row.volume),
-      }))
-      .reverse(); // lightweight-charts needs ascending time
+    const candles = rows.map(row => ({
+      time: Number(row.time),
+      open: parseFloat(row.open),
+      high: parseFloat(row.high),
+      low: parseFloat(row.low),
+      close: parseFloat(row.close),
+      volume: parseFloat(row.volume),
+    }));
 
     return res.json({
       candles,
@@ -118,8 +113,6 @@ router.get('/indicators', responseCache(
   }
 
   const interval = TF_INTERVAL[timeframe];
-  const limit = Math.max(TF_LIMIT[timeframe], 200);
-
   try {
     const sql = `
       SELECT
@@ -133,12 +126,10 @@ router.get('/indicators', responseCache(
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time ASC
-      LIMIT {lim: UInt32}
     `;
 
     const { rows } = await query(sql, {
       sym: symbol.toUpperCase(),
-      lim: limit,
     });
 
     const data = rows.map(r => ({
@@ -374,10 +365,8 @@ router.post('/anomalies', authMiddleware, async (req, res) => {
   if (!validateParams(symbol, timeframe, res)) return;
 
   const interval = TF_INTERVAL[timeframe];
-  const limit = TF_LIMIT[timeframe];
-
   try {
-    // 1. Pull candles for anomaly detection
+    // 1. Pull candles for anomaly detection (last 500 is enough for the AI model)
     const sql = `
       SELECT
         toUnixTimestamp(${interval}) AS time,
@@ -390,12 +379,11 @@ router.post('/anomalies', authMiddleware, async (req, res) => {
       WHERE symbol = {sym: String}
       GROUP BY time
       ORDER BY time DESC
-      LIMIT {lim: UInt32}
+      LIMIT 500
     `;
 
     const { rows } = await query(sql, {
       sym: symbol.toUpperCase(),
-      lim: limit,
     });
 
     const candles = rows
