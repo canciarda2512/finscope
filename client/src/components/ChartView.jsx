@@ -267,7 +267,7 @@ export default function ChartView({
   // ── Timeframe option update ──
   useEffect(() => {
     if (!chartRef.current) return;
-    const intraday = ['1m', '5m', '15m', '1h', '4h'].includes(timeframe);
+    const intraday = !['1D', '1W', '1M'].includes(timeframe);
     chartRef.current.applyOptions({
       timeScale: { timeVisible: intraday },
     });
@@ -442,6 +442,25 @@ export default function ChartView({
       macdChartRef.current = macdChart;
     }
 
+    // Sync main chart scroll/zoom to sub-charts
+    let syncing = false;
+    const syncToSub = (range) => {
+      if (syncing || !range) return;
+      syncing = true;
+      try {
+        if (rsiChartRef.current) rsiChartRef.current.timeScale().setVisibleLogicalRange(range);
+        if (macdChartRef.current) macdChartRef.current.timeScale().setVisibleLogicalRange(range);
+      } catch (_) {}
+      syncing = false;
+    };
+
+    if (chartRef.current) {
+      chartRef.current.timeScale().subscribeVisibleLogicalRangeChange(syncToSub);
+      // Initial sync
+      const initialRange = chartRef.current.timeScale().getVisibleLogicalRange();
+      if (initialRange) syncToSub(initialRange);
+    }
+
     // Resize handler for sub-charts
     const handleResize = () => {
       if (rsiChartRef.current && rsiContainerRef.current) {
@@ -454,6 +473,9 @@ export default function ChartView({
     window.addEventListener('resize', handleResize);
 
     return () => {
+      if (chartRef.current) {
+        try { chartRef.current.timeScale().unsubscribeVisibleLogicalRangeChange(syncToSub); } catch (_) {}
+      }
       window.removeEventListener('resize', handleResize);
       if (rsiChartRef.current) {
         try { rsiChartRef.current.remove(); } catch (_) {}

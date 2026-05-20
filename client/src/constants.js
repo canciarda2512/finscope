@@ -15,6 +15,6 @@ export const SYMBOL_NAMES = {
   OPUSDT: 'Optimism', NEARUSDT: 'NEAR', INJUSDT: 'Injective', SUIUSDT: 'Sui', SEIUSDT: 'Sei',
 };
 
-export const TIMEFRAMES = ['1m', '5m', '1D', '1W', '1M'];
+export const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1D', '1W', '1M'];
 
 export const INDICATORS = ['SMA', 'EMA', 'RSI', 'MACD', 'BB'];
