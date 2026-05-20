@@ -7,6 +7,7 @@ import {
   getLatestPrice,
   getOpenLimitOrders,
 } from '../services/PortfolioService.js';
+import { query } from '../services/ClickHouseClient.js';
 import { createNotification } from '../services/NotificationService.js';
 
 import { validateSymbol, validateNumber } from '../utils/validation.js';
@@ -28,15 +29,23 @@ router.post('/market', async (req, res, next) => {
     const side = String(req.body.side || 'buy').toLowerCase();
     const amountUsd = toNumber(req.body.amountUsd);
     const requestedQuantity = toNumber(req.body.quantity);
+    const sellAll = req.body.sellAll === true;
     const latestPrice = await getLatestPrice(symbol);
 
     if (!latestPrice || latestPrice <= 0) {
       return res.status(422).json({ message: 'No live price is available for this symbol yet.' });
     }
 
-    const quantity = requestedQuantity > 0
-      ? requestedQuantity
-      : amountUsd / latestPrice;
+    let quantity;
+    if (sellAll && side === 'sell') {
+      const { rows } = await query(
+        'SELECT quantity FROM positions FINAL WHERE userId = {userId:String} AND symbol = {symbol:String} LIMIT 1',
+        { userId, symbol }
+      );
+      quantity = toNumber(rows[0]?.quantity);
+    } else {
+      quantity = requestedQuantity > 0 ? requestedQuantity : amountUsd / latestPrice;
+    }
 
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return res.status(400).json({ message: 'Invalid quantity or amount.' });

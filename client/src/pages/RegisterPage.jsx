@@ -20,7 +20,7 @@ function getPasswordStrength(password) {
 }
 
 export default function RegisterPage() {
-  const [formData, setFormData] = useState({ email: '', password: '', confirmPassword: '' });
+  const [formData, setFormData] = useState({ username: '', email: '', password: '', confirmPassword: '', tcKimlikNo: '', phoneNumber: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -35,12 +35,16 @@ export default function RegisterPage() {
 
     if (formData.password !== formData.confirmPassword) { setError('Passwords do not match.'); return; }
     if (formData.password.length < 8) { setError('Password must be at least 8 characters.'); return; }
+    if (!/^\d{11}$/.test(formData.tcKimlikNo) || formData.tcKimlikNo[0] === '0') { setError('TC kimlik numarasi 11 haneli olmalidir ve 0 ile baslayamaz.'); return; }
+    if (!/^\+?\d{10,15}$/.test(formData.phoneNumber.replace(/\s/g, ''))) { setError('Gecerli bir telefon numarasi giriniz.'); return; }
 
     setLoading(true);
     try {
       await APIClient.post('/auth/register', {
         email: formData.email,
         password: formData.password,
+        tcKimlikNo: formData.tcKimlikNo,
+        phoneNumber: formData.phoneNumber.replace(/\s/g, ''),
       });
       navigate('/login', { state: { registered: true } });
     } catch (err) {
@@ -104,6 +108,23 @@ export default function RegisterPage() {
                 type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} required
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
                 placeholder="Re-enter your password"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>TC Kimlik No</label>
+              <input
+                type="text" name="tcKimlikNo" value={formData.tcKimlikNo} onChange={handleChange} required
+                maxLength={11}
+                className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
+                placeholder="11 haneli TC kimlik numaraniz"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Telefon Numarasi</label>
+              <input
+                type="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required
+                className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
+                placeholder="+90 5XX XXX XX XX"
               />
             </div>
 

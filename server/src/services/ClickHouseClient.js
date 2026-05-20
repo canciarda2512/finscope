@@ -161,6 +161,8 @@ export async function createUser(user) {
         email: user.email,
         passwordHash: user.passwordHash,
         refreshToken: user.refreshToken,
+        tcKimlikNo: user.tcKimlikNo ?? '',
+        phoneNumber: user.phoneNumber ?? '',
         createdAt: user.createdAt,
       },
     ],
