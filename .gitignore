@@ -4,3 +4,7 @@ dist/
 __pycache__/
 *.pyc
 .venv/
+
+# Java build artifacts
+**/target/
+.vscode/
