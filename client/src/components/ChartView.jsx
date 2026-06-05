@@ -286,7 +286,7 @@ export default function ChartView({
       { time: from.time, value: from.price },
       { time: to.time, value: to.price },
     ]);
-    addDrawing('tline', [s], { from, to });
+    addDrawing('trendline', [s], { from, to });
   }, [addDrawing]);
 
   const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
