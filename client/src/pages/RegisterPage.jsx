@@ -35,8 +35,8 @@ export default function RegisterPage() {
 
     if (formData.password !== formData.confirmPassword) { setError('Passwords do not match.'); return; }
     if (formData.password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (!/^\d{11}$/.test(formData.tcKimlikNo) || formData.tcKimlikNo[0] === '0') { setError('TC kimlik numarasi 11 haneli olmalidir ve 0 ile baslayamaz.'); return; }
-    if (!/^\+?\d{10,15}$/.test(formData.phoneNumber.replace(/\s/g, ''))) { setError('Gecerli bir telefon numarasi giriniz.'); return; }
+    if (!/^\d{11}$/.test(formData.tcKimlikNo) || formData.tcKimlikNo[0] === '0') { setError('Turkish ID number must be 11 digits and cannot start with 0.'); return; }
+    if (!/^\+?\d{10,15}$/.test(formData.phoneNumber.replace(/\s/g, ''))) { setError('Please enter a valid phone number.'); return; }
 
     setLoading(true);
     try {
@@ -111,16 +111,16 @@ export default function RegisterPage() {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>TC Kimlik No</label>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Turkish ID Number</label>
               <input
                 type="text" name="tcKimlikNo" value={formData.tcKimlikNo} onChange={handleChange} required
                 maxLength={11}
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}
-                placeholder="11 haneli TC kimlik numaraniz"
+                placeholder="Your 11-digit Turkish ID number"
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Telefon Numarasi</label>
+              <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Phone Number</label>
               <input
                 type="tel" name="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required
                 className="w-full rounded-lg px-3 py-2 text-sm outline-none transition" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-secondary)', color: 'var(--text-primary)' }}

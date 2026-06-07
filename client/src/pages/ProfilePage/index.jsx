@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/Authcontext';
 import { usePortfolio } from '../../context/PortfolioContext';
 import {
@@ -24,6 +25,7 @@ const TABS = [
 export default function ProfilePage() {
   const { user } = useAuth();
   const { portfolio: portfolioData, loading } = usePortfolio();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab]         = useState('overview');
   const [twoFAEnabled, setTwoFAEnabled]   = useState(() => !!user?.twoFactorEnabled);
 
@@ -62,8 +64,15 @@ export default function ProfilePage() {
               flex items-center justify-center shadow-2xl shadow-blue-900/50" style={{ borderWidth: '4px', borderColor: 'var(--bg-primary)' }}>
               <span className="text-white font-black text-3xl tracking-tight">{initials}</span>
             </div>
-            <button className="absolute -bottom-1 -right-1 w-8 h-8 bg-blue-500 hover:bg-blue-400 rounded-xl
-              flex items-center justify-center transition-colors shadow-lg" style={{ borderWidth: '2px', borderColor: 'var(--bg-primary)' }}>
+            <button
+              type="button"
+              onClick={() => navigate('/profile/details')}
+              aria-label="View profile details"
+              title="View profile details"
+              className="absolute -bottom-1 -right-1 w-8 h-8 bg-blue-500 hover:bg-blue-400 rounded-xl
+              flex items-center justify-center transition-colors shadow-lg"
+              style={{ borderWidth: '2px', borderColor: 'var(--bg-primary)' }}
+            >
               <Edit2 size={13} className="text-white" />
             </button>
             <div className="absolute top-1 right-1 w-3 h-3 bg-green-400 rounded-full" style={{ borderWidth: '2px', borderColor: 'var(--bg-primary)' }} />

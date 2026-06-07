@@ -17,6 +17,7 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const MultiChartPage = lazy(() => import('./pages/MultiChartPage'));
 const StrategyPage = lazy(() => import('./pages/StrategyPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const ProfileDetailsPage = lazy(() => import('./pages/ProfileDetailsPage'));
 
 // "/" shows LandingPage for guests, ChartPage for logged-in users
 const HomeRoute = () => {
@@ -65,6 +66,7 @@ export default function App() {
                   <Route path="/strategy" element={<ProtectedRoute><StrategyPage /></ProtectedRoute>} />
                   <Route path="/multi-chart" element={<ProtectedRoute><MultiChartPage /></ProtectedRoute>} />
                   <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+                  <Route path="/profile/details" element={<ProtectedRoute><ProfileDetailsPage /></ProtectedRoute>} />
 
                   <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
